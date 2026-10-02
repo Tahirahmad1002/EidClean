@@ -1,0 +1,51 @@
+name: eidclean_app
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI
+  cupertino_icons: ^1.0.8
+  google_fonts: ^8.1.0
+
+  # Firebase
+  firebase_core: ^4.11.0
+  firebase_auth: ^6.5.4
+  cloud_firestore: ^6.6.0
+
+  # State Management
+  provider: ^6.1.5+1
+
+  # Image Picker (for driver photos)
+  image_picker: ^1.0.4
+
+  # Maps (OpenStreetMap)
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # GPS Location
+  geolocator: ^13.0.1
+
+  # Open URL (for navigation to Google Maps)
+  url_launcher: ^6.3.0
+
+  # HTTP (for Nominatim geocoding)
+  http: ^1.2.0
+
+  # ✅ NEW: For Real-time Tracking
+  location: ^7.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
