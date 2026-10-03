@@ -1,0 +1,4 @@
+Model,Untuned_R2,Tuned_R2,Tuned_MAE_kg,Improvement
+RandomForest,0.9733,0.9733,101.91,0.0
+HistGradientBoosting,0.5937,0.818,167.35,0.2243
+LightGBM,0.5161,0.7989,171.29,0.2828

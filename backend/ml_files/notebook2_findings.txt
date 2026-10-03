@@ -1,0 +1,25 @@
+EidClean ML Pipeline - Notebook 2 Findings
+==================================================
+
+Model comparison on log target
+               Model  Untuned_R2  Tuned_R2  Tuned_MAE_kg  Improvement
+        RandomForest      0.9733    0.9733        101.91       0.0000
+HistGradientBoosting      0.5937    0.8180        167.35       0.2243
+            LightGBM      0.5161    0.7989        171.29       0.2828
+
+Cluster feature test
+  Without cluster R2: 0.9733
+  With cluster R2:    0.9646
+  Conclusion: cluster feature did not help
+
+Raw vs log target - single split
+  Log target R2: 0.9733
+  Raw target R2: 0.9852
+
+Raw vs log target - 5-fold GroupKFold CV
+  Log CV mean R2: 0.9815 (stable)
+  Raw CV mean R2: 0.8924 (unstable, two folds below 0.78)
+
+Final model: RandomForest on log target
+  Test R2: 0.9733
+  Test MAE: 101.91 kg

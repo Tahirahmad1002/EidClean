@@ -1,0 +1,69 @@
+{
+  "model_type": "RandomForestRegressor",
+  "target_type": "log",
+  "feature_columns": [
+    "Population_2023",
+    "Housing_Units",
+    "Estimated_Qurbani_Participation_Rate_pct",
+    "Area_Type_Encoded",
+    "Eid_Day"
+  ],
+  "uses_cluster_feature": false,
+  "cluster_count": 3,
+  "metrics": {
+    "test_r2": 0.9732635111507296,
+    "test_mae_kg": 101.9068653203325,
+    "test_rmse_kg": 453.39859198445197,
+    "cv_mean_r2": 0.9815,
+    "cv_std_r2": 0.019
+  },
+  "best_params": {
+    "max_depth": null,
+    "min_samples_split": 2,
+    "n_estimators": 100
+  },
+  "input_ranges": {
+    "Population_2023": {
+      "min": 5,
+      "max": 138715
+    },
+    "Housing_Units": {
+      "min": 1,
+      "max": 24313
+    },
+    "Estimated_Qurbani_Participation_Rate_pct": {
+      "min": 0.1781,
+      "max": 0.3949
+    },
+    "Area_Type_Encoded": {
+      "min": 0,
+      "max": 1,
+      "meaning": {
+        "0": "Rural",
+        "1": "Urban"
+      }
+    },
+    "Eid_Day": {
+      "min": 1,
+      "max": 3
+    }
+  },
+  "training_summary": {
+    "dataset": "EidClean_Abbottabad_Final_ML_Dataset",
+    "rows_trained": 849,
+    "rows_tested": 213,
+    "unique_localities_trained": 283
+  },
+  "target_transform": {
+    "log_applied": true,
+    "formula": "log1p(waste_kg)",
+    "inverse_formula": "expm1(prediction)"
+  },
+  "resource_planning_rules": {
+    "truck_capacity_kg": 2500,
+    "worker_capacity_kg": 1500,
+    "bin_capacity_kg": 200,
+    "note": "Configurable - these are prototype assumptions, not municipal facts"
+  },
+  "generated_at": "2026-10-03T18:28:01.873058"
+}

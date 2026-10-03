@@ -1,0 +1,19 @@
+{
+  "log_target_folds": [
+    0.9885,
+    0.9932,
+    0.9437,
+    0.9956,
+    0.9867
+  ],
+  "raw_target_folds": [
+    0.7597,
+    0.9791,
+    0.9823,
+    0.9661,
+    0.7748
+  ],
+  "log_mean": 0.9815,
+  "raw_mean": 0.8924,
+  "note": "Cross-validation results from GroupKFold on training set"
+}
