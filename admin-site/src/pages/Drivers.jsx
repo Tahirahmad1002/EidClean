@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs, addDoc, setDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth, db } from "../firebase";
+import { db, secondaryAuth } from "../firebase";
 import Sidebar from "../components/Sidebar";
 import {
   CircleCheck,
@@ -76,9 +76,12 @@ export default function Drivers() {
     setFormLoading(true);
     setError("");
     try {
-      const cred = await createUserWithEmailAndPassword(
-        auth, form.email, form.password
-      );
+// ⭐ Use SECONDARY auth — admin's primary session is untouched
+const cred = await createUserWithEmailAndPassword(
+  secondaryAuth,
+  form.email,
+  form.password,
+);
 
       // Use UID as document ID for both drivers and users
       // This matches Firebase Auth UID — enables direct doc lookups later

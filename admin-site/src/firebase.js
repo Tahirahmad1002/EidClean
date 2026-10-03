@@ -16,3 +16,15 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export default app;
+
+// ─── SECONDARY FIREBASE APP ────────────────────────
+// Used only for creating driver accounts so that the
+// admin's primary session is not affected.
+import { getApps } from "firebase/app";
+import { getAuth as getSecondaryAuth } from "firebase/auth";
+
+const SECONDARY_APP_NAME = "driverCreator";
+export const secondaryApp =
+  getApps().find((a) => a.name === SECONDARY_APP_NAME) ||
+  initializeApp(firebaseConfig, SECONDARY_APP_NAME);
+export const secondaryAuth = getSecondaryAuth(secondaryApp);
