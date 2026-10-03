@@ -1,6 +1,7 @@
-// 📁 src/pages/RoleSelection.jsx
+// src/pages/RoleSelection.jsx
 
 import { useNavigate } from "react-router-dom";
+import { ArrowRight, Building2, HeartHandshake, Moon } from "lucide-react";
 
 export default function RoleSelection() {
   const navigate = useNavigate();
@@ -14,112 +15,138 @@ export default function RoleSelection() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden"
-  style={{
-    background: `
-      radial-gradient(ellipse 600px 500px at 25% 30%, #0d5c3e, transparent 55%),
-      radial-gradient(ellipse 600px 500px at 75% 70%, #1a56db, transparent 55%),
-      linear-gradient(135deg, #0d5c3e 0%, #0d5c3e 30%, #1a56db 70%, #1a56db 100%)
-    `
-  }}
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-950 to-slate-950 p-4 sm:p-5 lg:p-6">
+      {/* Lattice pattern */}
+      <div
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:32px_32px]"
+        aria-hidden="true"
+      />
 
-    >
-      {/* Logo */}
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-900 flex items-center justify-center mb-5">
-        <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-        </svg>
-      </div>
+      {/* Ambient glow */}
+      <div
+        className="pointer-events-none absolute -left-24 -top-32 h-96 w-96 rounded-full bg-emerald-500/20 blur-3xl"
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute -bottom-32 -right-24 h-80 w-80 rounded-full bg-amber-400/10 blur-3xl"
+        aria-hidden="true"
+      />
+      <Moon
+        className="pointer-events-none absolute right-8 top-8 h-32 w-32 text-white/5 sm:h-44 sm:w-44"
+        aria-hidden="true"
+      />
 
-      <h1 className="text-3xl font-bold text-white text-center mb-2">
-        EidClean
-      </h1>
-      <p className="text-gray-400 text-sm text-center mb-12">
-        Abbottabad · Eid-ul-Adha Waste Management System
-      </p>
+      <div className="relative flex w-full max-w-3xl flex-col items-center">
+        {/* Logo */}
+        <div className="relative mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 shadow-lg shadow-emerald-500/20 ring-1 ring-white/20">
+          <Moon className="h-6 w-6 text-white" aria-hidden="true" />
+          <span
+            className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-emerald-950"
+            aria-hidden="true"
+          />
+        </div>
 
-      {/* Cards */}
-      <div className="flex flex-wrap gap-6 justify-center max-w-2xl">
-        
-        {/* Municipal Admin Card */}
-        <div
-          onClick={handleMunicipalClick}
-          className="w-80 rounded-2xl p-7 border border-[#23271f] bg-[#12140f] cursor-pointer transition-all duration-300 hover:bg-[rgba(16,74,46,0.35)] hover:border-[rgba(34,197,94,0.35)] group"
-        >
-          <div className="w-11 h-11 rounded-xl bg-green-600 flex items-center justify-center mb-5">
-            <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5.5 h-5.5">
-              <rect x="4" y="2" width="16" height="20" rx="2"></rect>
-              <line x1="9" y1="6" x2="9" y2="6"></line>
-              <line x1="15" y1="6" x2="15" y2="6"></line>
-              <line x1="9" y1="10" x2="9" y2="10"></line>
-              <line x1="15" y1="10" x2="15" y2="10"></line>
-              <line x1="9" y1="14" x2="9" y2="14"></line>
-              <line x1="15" y1="14" x2="15" y2="14"></line>
-              <line x1="9" y1="18" x2="15" y2="18"></line>
-            </svg>
-          </div>
-          <h2 className="text-lg font-bold text-white mb-2.5">Municipal Admin</h2>
-          <p className="text-[13.5px] leading-relaxed text-[#a3a8b0] mb-4">
-            Manage waste pickups, track drivers, and plan resources for Abbottabad.
-          </p>
-          <div className="text-green-400 font-semibold text-sm inline-flex items-center gap-1.5 mb-5">
-            Continue as Municipal Admin →
-          </div>
-          <div className="border-t border-white/10 pt-4 flex gap-7">
-            <div>
-              <div className="text-lg font-bold text-green-400">145</div>
-              <div className="text-[11.5px] text-[#8b9096]">Pickups</div>
+        <h1 className="text-center text-3xl font-semibold tracking-tight text-white">
+          EidClean
+        </h1>
+        <p className="mb-8 mt-2 text-center text-sm text-emerald-100/60 sm:mb-10 lg:mb-12">
+          Abbottabad · Eid-ul-Adha Waste Management System
+        </p>
+
+        {/* Cards */}
+        <div className="grid w-full grid-cols-1 gap-4 sm:gap-5 md:grid-cols-2 lg:gap-6">
+          {/* Municipal Admin Card */}
+          <div
+            onClick={handleMunicipalClick}
+            className="group relative cursor-pointer overflow-hidden rounded-2xl bg-white/5 p-5 ring-1 ring-white/10 backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-400/10 hover:ring-emerald-300/30 sm:p-6"
+          >
+            <div
+              className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-emerald-400/10 blur-3xl transition-opacity duration-200 group-hover:bg-emerald-400/20"
+              aria-hidden="true"
+            />
+            <div className="relative">
+              <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-400/15 text-emerald-300 ring-1 ring-emerald-300/20">
+                <Building2 className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <h2 className="mb-2 text-lg font-semibold tracking-tight text-white">
+                Municipal Admin
+              </h2>
+              <p className="mb-4 text-sm leading-relaxed text-emerald-50/60">
+                Manage waste pickups, track drivers, and plan resources for Abbottabad.
+              </p>
+              <div className="mb-5 inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-300">
+                Continue as Municipal Admin
+                <ArrowRight
+                  className="h-4 w-4 transition-transform duration-150 group-hover:translate-x-0.5"
+                  aria-hidden="true"
+                />
+              </div>
+              <div className="flex gap-7 border-t border-white/10 pt-4">
+                <div>
+                  <div className="text-lg font-semibold tabular-nums tracking-tight text-emerald-300">145</div>
+                  <div className="text-xs text-emerald-100/50">Pickups</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold tabular-nums tracking-tight text-emerald-300">23</div>
+                  <div className="text-xs text-emerald-100/50">Drivers</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold tabular-nums tracking-tight text-emerald-300">89%</div>
+                  <div className="text-xs text-emerald-100/50">On-Time</div>
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="text-lg font-bold text-green-400">23</div>
-              <div className="text-[11.5px] text-[#8b9096]">Drivers</div>
-            </div>
-            <div>
-              <div className="text-lg font-bold text-green-400">89%</div>
-              <div className="text-[11.5px] text-[#8b9096]">On-Time</div>
+          </div>
+
+          {/* NGO Admin Card */}
+          <div
+            onClick={handleNgoClick}
+            className="group relative cursor-pointer overflow-hidden rounded-2xl bg-white/5 p-5 ring-1 ring-white/10 backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:bg-amber-400/10 hover:ring-amber-300/30 sm:p-6"
+          >
+            <div
+              className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-amber-400/10 blur-3xl transition-opacity duration-200 group-hover:bg-amber-400/20"
+              aria-hidden="true"
+            />
+            <div className="relative">
+              <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-amber-400/15 text-amber-300 ring-1 ring-amber-300/20">
+                <HeartHandshake className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <h2 className="mb-2 text-lg font-semibold tracking-tight text-white">
+                NGO Admin
+              </h2>
+              <p className="mb-4 text-sm leading-relaxed text-emerald-50/60">
+                Manage meat donations, coordinate pickups, and distribute to families in need.
+              </p>
+              <div className="mb-5 inline-flex items-center gap-1.5 text-sm font-semibold text-amber-300">
+                Continue as NGO Admin
+                <ArrowRight
+                  className="h-4 w-4 transition-transform duration-150 group-hover:translate-x-0.5"
+                  aria-hidden="true"
+                />
+              </div>
+              <div className="flex gap-7 border-t border-white/10 pt-4">
+                <div>
+                  <div className="text-lg font-semibold tabular-nums tracking-tight text-amber-300">2.5K</div>
+                  <div className="text-xs text-emerald-100/50">Meat kg</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold tabular-nums tracking-tight text-amber-300">180</div>
+                  <div className="text-xs text-emerald-100/50">Donations</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold tabular-nums tracking-tight text-amber-300">450</div>
+                  <div className="text-xs text-emerald-100/50">Families</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* NGO Admin Card */}
-        <div
-          onClick={handleNgoClick}
-          className="w-80 rounded-2xl p-7 border border-[#23271f] bg-[#12140f] cursor-pointer transition-all duration-300 hover:bg-[rgba(30,58,138,0.3)] hover:border-[rgba(96,165,250,0.35)] group"
-        >
-          <div className="w-11 h-11 rounded-xl bg-blue-800 flex items-center justify-center mb-5">
-            <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5.5 h-5.5">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
-            </svg>
-          </div>
-          <h2 className="text-lg font-bold text-white mb-2.5">NGO Admin</h2>
-          <p className="text-[13.5px] leading-relaxed text-[#a3a8b0] mb-4">
-            Manage meat donations, coordinate pickups, and distribute to families in need.
-          </p>
-          <div className="text-blue-400 font-semibold text-sm inline-flex items-center gap-1.5 mb-5">
-            Continue as NGO Admin →
-          </div>
-          <div className="border-t border-[#2a2d36] pt-4 flex gap-7">
-            <div>
-              <div className="text-lg font-bold text-blue-400">2.5K</div>
-              <div className="text-[11.5px] text-[#8b9096]">Meat kg</div>
-            </div>
-            <div>
-              <div className="text-lg font-bold text-blue-400">180</div>
-              <div className="text-[11.5px] text-[#8b9096]">Donations</div>
-            </div>
-            <div>
-              <div className="text-lg font-bold text-blue-400">450</div>
-              <div className="text-[11.5px] text-[#8b9096]">Families</div>
-            </div>
-          </div>
-        </div>
-
+        {/* Footer */}
+        <footer className="mt-8 text-center text-xs text-emerald-100/40 sm:mt-10 lg:mt-12">
+          © 2026 EidClean · Abbottabad Municipal Corporation
+        </footer>
       </div>
-
-      {/* Footer */}
-      <footer className="mt-12 text-[12.5px] text-[#5c6067] text-center">
-        © 2026 EidClean · Abbottabad Municipal Corporation
-      </footer>
     </div>
   );
 }
