@@ -1,14 +1,11 @@
 // 📁 lib/screens/driver/driver_home.dart
 
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../auth/login_screen.dart';
 import 'driver_task_detail.dart';
-import 'optimize_route_screen.dart';
-import 'active_route_screen.dart';
 
 class DriverHome extends StatefulWidget {
   const DriverHome({super.key});
@@ -62,26 +59,12 @@ class _DashboardTab extends StatefulWidget {
 class _DashboardTabState extends State<_DashboardTab> {
   String _filter = 'all';
   bool _isRouteOptimized = false;
-  List<String> _optimizedSequence = [];
-  int _pendingCount = 0;
   String? _driverName;
-
-  StreamSubscription<DocumentSnapshot>? _driverSub;
-  bool _reoptimizationPromptShown = false;
 
   @override
   void initState() {
     super.initState();
     _loadDriverName();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _listenToDriverDoc();
-    });
-  }
-
-  @override
-  void dispose() {
-    _driverSub?.cancel();
-    super.dispose();
   }
 
   Future<void> _loadDriverName() async {
@@ -96,174 +79,9 @@ class _DashboardTabState extends State<_DashboardTab> {
           _driverName = doc.data()?['name'] as String?;
         });
       } catch (e) {
-        debugPrint('[DriverHome] Error loading name: $e');
+        print('Error loading driver name: $e');
       }
     }
-  }
-
-  // ─── DRIVER DOC LISTENER ──────────────────────
-
-void _listenToDriverDoc() {
-  final auth = context.read<AuthProvider>();
-  final uid = auth.user?.uid;
-  if (uid == null) return;
-
-  _driverSub = FirebaseFirestore.instance
-      .collection('drivers')
-      .doc(uid)
-      .snapshots()
-      .listen((snapshot) async {
-    if (!snapshot.exists || !mounted) return;
-    final data = snapshot.data();
-    if (data == null) return;
-
-    final sequence = data['optimizedSequence'];
-    if (sequence is List && sequence.isNotEmpty) {
-      // ✅ NEW: Validate sequence — only keep IDs of pending tasks
-      try {
-        final pendingSnap = await FirebaseFirestore.instance
-            .collection('pickupRequests')
-            .where('driverId', isEqualTo: uid)
-            .where('status', whereIn: ['assigned', 'arrived', 'on_the_way'])
-            .get();
-
-        final pendingIds = pendingSnap.docs.map((d) => d.id).toSet();
-        final validSequence = sequence
-            .map((e) => e.toString())
-            .where((id) => pendingIds.contains(id))
-            .toList();
-
-        if (validSequence.isEmpty) {
-          // Stale sequence — clear it
-          debugPrint('[DriverHome] Stale sequence detected — clearing');
-          await FirebaseFirestore.instance
-              .collection('drivers')
-              .doc(uid)
-              .update({'optimizedSequence': []});
-          if (mounted) {
-            setState(() {
-              _isRouteOptimized = false;
-              _optimizedSequence = [];
-            });
-          }
-        } else {
-          if (mounted) {
-            setState(() {
-              _isRouteOptimized = true;
-              _optimizedSequence = validSequence;
-            });
-          }
-        }
-      } catch (e) {
-        debugPrint('[DriverHome] Sequence validation error: $e');
-        // Fallback: trust the sequence
-        if (mounted) {
-          setState(() {
-            _isRouteOptimized = true;
-            _optimizedSequence = sequence.map((e) => e.toString()).toList();
-          });
-        }
-      }
-    } else {
-      if (mounted) {
-        setState(() {
-          _isRouteOptimized = false;
-          _optimizedSequence = [];
-        });
-      }
-    }
-
-    _checkReoptimizationFlag(uid);
-  });
-}
-
-  Future<void> _checkReoptimizationFlag(String uid) async {
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('pickupRequests')
-          .where('driverId', isEqualTo: uid)
-          .where('status', isEqualTo: 'completed')
-          .where('routeNeedsReoptimization', isEqualTo: true)
-          .limit(1)
-          .get();
-
-      if (snap.docs.isNotEmpty && !_reoptimizationPromptShown && mounted) {
-        _reoptimizationPromptShown = true;
-        _showReoptimizeDialog();
-      }
-    } catch (e) {
-      debugPrint('[DriverHome] Flag check error: $e');
-    }
-  }
-
-  void _showReoptimizeDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.auto_awesome, color: Color(0xFFF59E0B)),
-            SizedBox(width: 8),
-            Text('Route Update Available'),
-          ],
-        ),
-        content: const Text(
-          'A pickup was completed. Optimize the remaining route for the best sequence?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _reoptimizationPromptShown = false;
-            },
-            child: const Text('Later'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _generateRoute();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
-            ),
-            child: const Text('Optimize Now'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─── ACTIONS ──────────────────────────────────
-
-  Future<void> _generateRoute() async {
-    final result = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const OptimizeRouteScreen(),
-      ),
-    );
-    if (result == true && mounted) {
-      setState(() => _isRouteOptimized = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Route accepted — follow the sequence'),
-          backgroundColor: Color(0xFF10B981),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      // Navigate directly to active route for immediate action
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const ActiveRouteScreen()),
-      );
-    }
-  }
-
-  void _openActiveRoute() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const ActiveRouteScreen()),
-    );
   }
 
   @override
@@ -324,32 +142,16 @@ void _listenToDriverDoc() {
 
                   final docs = snapshot.data!.docs;
                   final total = docs.length;
-                  final done = docs
-                      .where((d) =>
-                          (d.data() as Map)['status'] == 'completed')
-                      .length;
-                  final pending = docs.where((d) {
-                    final s = (d.data() as Map)['status'] ?? '';
-                    return s == 'assigned' || s == 'arrived' || s == 'on_the_way';
-                  }).length;
-
-                  // Update pending count for banner
-                  if (_pendingCount != pending) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) setState(() => _pendingCount = pending);
-                    });
-                  }
+                  final done = docs.where((d) =>
+                      (d.data() as Map)['status'] == 'completed').length;
 
                   return Row(
                     children: [
-                      _statCard('Total', '$total', Icons.list_alt,
-                          const Color(0xFF6366F1)),
+                      _statCard('Total', '$total', Icons.list_alt, const Color(0xFF6366F1)),
                       const SizedBox(width: 12),
-                      _statCard('Pending', '$pending', Icons.access_time,
-                          const Color(0xFFF59E0B)),
+                      _statCard('Done', '$done', Icons.check_circle, const Color(0xFF10B981)),
                       const SizedBox(width: 12),
-                      _statCard('Done', '$done', Icons.check_circle,
-                          const Color(0xFF10B981)),
+                      _statCard('Earned', 'Rating', Icons.rate_review_rounded, const Color(0xFFF59E0B)),
                     ],
                   );
                 },
@@ -358,7 +160,95 @@ void _listenToDriverDoc() {
               const SizedBox(height: 20),
 
               // ─── AI ROUTE OPTIMIZATION ────────
-              _buildOptimizationCard(),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF10B981), Color(0xFF0F766E)],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.route, color: Colors.white, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'AI Route Optimization',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (_isRouteOptimized)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Text(
+                              '✅ Optimized',
+                              style: TextStyle(color: Colors.white, fontSize: 10),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Get the fastest route for all pickups today',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.8),
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _generateRoute,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: const Color(0xFF0F766E),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: const Text(
+                              'Generate Optimized Route',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: () {},
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white.withOpacity(0.7),
+                          ),
+                          child: const Text('Skip'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
 
               const SizedBox(height: 24),
 
@@ -405,7 +295,7 @@ void _listenToDriverDoc() {
 
                   final docs = snapshot.data!.docs;
 
-                  // Filter
+                  // ─── FILTER ──────────────────
                   var filteredDocs = docs;
                   if (_filter == 'assigned') {
                     filteredDocs = docs.where((d) {
@@ -419,31 +309,26 @@ void _listenToDriverDoc() {
                     }).toList();
                   }
 
-                  // Sort: pending first, then by optimized sequence if available
-                  filteredDocs = filteredDocs.toList()
-                    ..sort((a, b) {
-                      final statusA = (a.data() as Map)['status'] ?? '';
-                      final statusB = (b.data() as Map)['status'] ?? '';
-
-                      int getPriority(String status) {
-                        if (status == 'on_the_way') return 0;
-                        if (status == 'assigned') return 1;
-                        if (status == 'arrived') return 2;
-                        if (status == 'completed') return 3;
-                        return 4;
-                      }
-
-                      return getPriority(statusA)
-                          .compareTo(getPriority(statusB));
-                    });
+                  // ─── SORT: PENDING FIRST ────
+                  filteredDocs = filteredDocs.toList()..sort((a, b) {
+                    final statusA = (a.data() as Map)['status'] ?? '';
+                    final statusB = (b.data() as Map)['status'] ?? '';
+                    
+                    int getPriority(String status) {
+                      if (status == 'assigned') return 0;
+                      if (status == 'arrived') return 1;
+                      if (status == 'completed') return 2;
+                      return 3;
+                    }
+                    
+                    return getPriority(statusA).compareTo(getPriority(statusB));
+                  });
 
                   if (filteredDocs.isEmpty) {
                     String message = 'No tasks';
                     if (_filter == 'assigned') message = 'No pending tasks';
-                    if (_filter == 'completed') {
-                      message = 'No completed tasks';
-                    }
-
+                    if (_filter == 'completed') message = 'No completed tasks';
+                    
                     return Container(
                       padding: const EdgeInsets.all(40),
                       decoration: BoxDecoration(
@@ -469,14 +354,12 @@ void _listenToDriverDoc() {
                       final data = doc.data() as Map<String, dynamic>;
                       final status = data['status'] ?? 'pending';
                       final isCompleted = status == 'completed';
-                      final seqIndex = _optimizedSequence.indexOf(doc.id);
 
                       return _buildTaskCard(
                         docId: doc.id,
                         data: data,
                         isCompleted: isCompleted,
                         priority: _getPriority(data),
-                        sequenceNumber: seqIndex >= 0 ? seqIndex + 1 : null,
                       );
                     }).toList(),
                   );
@@ -487,129 +370,6 @@ void _listenToDriverDoc() {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  // ─── OPTIMIZATION CARD ────────────────────────
-
-  Widget _buildOptimizationCard() {
-    final remaining = _optimizedSequence.length;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF10B981), Color(0xFF0F766E)],
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  _isRouteOptimized ? Icons.navigation : Icons.route,
-                  color: Colors.white,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  _isRouteOptimized
-                      ? 'Active Route'
-                      : 'AI Route Optimization',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-              if (_isRouteOptimized)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.25),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        '$remaining left',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _isRouteOptimized
-                ? 'Continue where you left off — next pickup is waiting'
-                : 'Get the fastest route for all pickups today',
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.85),
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed:
-                      _isRouteOptimized ? _openActiveRoute : _generateRoute,
-                  icon: Icon(
-                    _isRouteOptimized ? Icons.navigation : Icons.auto_awesome,
-                    size: 18,
-                  ),
-                  label: Text(
-                    _isRouteOptimized
-                        ? 'Continue Route'
-                        : 'Generate Optimized Route',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF0F766E),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }
@@ -663,16 +423,11 @@ void _listenToDriverDoc() {
     required Map<String, dynamic> data,
     required bool isCompleted,
     required int priority,
-    int? sequenceNumber,
   }) {
     final location = data['location'] ?? 'No location';
     final userName = data['userName'] ?? 'Customer';
     final animals = data['animals'] ?? 1;
     final wasteType = data['wasteType'] ?? 'mixed';
-    final status = data['status'] ?? 'assigned';
-
-    final isActive = status == 'on_the_way';
-    final isAssigned = status == 'assigned';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -680,13 +435,10 @@ void _listenToDriverDoc() {
       decoration: BoxDecoration(
         color: isCompleted ? Colors.grey[50] : Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: isActive
-            ? Border.all(color: const Color(0xFFF59E0B), width: 2)
-            : isCompleted
-                ? Border.all(
-                    color: const Color(0xFF10B981).withOpacity(0.3))
-                : null,
-        boxShadow: isCompleted || isActive
+        border: isCompleted
+            ? Border.all(color: const Color(0xFF10B981).withOpacity(0.3))
+            : null,
+        boxShadow: isCompleted
             ? null
             : [
                 BoxShadow(
@@ -699,91 +451,67 @@ void _listenToDriverDoc() {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top row: sequence badge + priority + status + time
+          // Row: Priority + Status + Distance/ETA
           Row(
-            children: [
-              // Sequence number (if in optimized route)
-              if (sequenceNumber != null && !isCompleted)
-                Container(
-                  width: 26,
-                  height: 26,
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2563EB),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      '$sequenceNumber',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-
-              // Priority badge
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _getPriorityColor(priority),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  'P$priority',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 10,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: isCompleted
-                      ? const Color(0xFF10B981)
-                      : isActive
-                          ? const Color(0xFFF59E0B)
-                          : const Color(0xFF2563EB),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                _statusLabel(status),
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[500],
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const Spacer(),
-              if (!isCompleted && data['timeSlot'] != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    data['timeSlot'].toString().split(' ')[0],
-                    style: const TextStyle(
-                      color: Color(0xFF10B981),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-            ],
+  children: [
+    // Priority Badge
+    Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: _getPriorityColor(priority),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        'P$priority',
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 11,
+        ),
+      ),
+    ),
+    const SizedBox(width: 8),
+    // Status Dot
+    Container(
+      width: 6,
+      height: 6,
+      decoration: BoxDecoration(
+        color: isCompleted ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+        shape: BoxShape.circle,
+      ),
+    ),
+    const SizedBox(width: 6),
+    // Status Text
+    Text(
+      isCompleted ? 'Completed' : 'Tap to view details',
+      style: TextStyle(
+        fontSize: 12,
+        color: Colors.grey[500],
+      ),
+    ),
+    const Spacer(),
+    // Time slot instead of random ETA
+    if (!isCompleted && data['timeSlot'] != null)
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF10B981).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          data['timeSlot'].toString().split(' ')[0], // Morning/Afternoon/Evening
+          style: const TextStyle(
+            color: Color(0xFF10B981),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
           ),
+        ),
+      ),
+  ],
+),
           const SizedBox(height: 10),
+
+          // Customer Name
           Text(
             userName,
             style: const TextStyle(
@@ -793,6 +521,8 @@ void _listenToDriverDoc() {
             ),
           ),
           const SizedBox(height: 4),
+
+          // Location
           Row(
             children: [
               Icon(Icons.location_on, size: 14, color: Colors.grey[500]),
@@ -800,7 +530,10 @@ void _listenToDriverDoc() {
               Expanded(
                 child: Text(
                   location,
-                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                  ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -808,13 +541,18 @@ void _listenToDriverDoc() {
             ],
           ),
           const SizedBox(height: 8),
+
+          // Animals + Waste Chips
           Row(
             children: [
               Icon(Icons.pets, size: 14, color: Colors.grey[500]),
               const SizedBox(width: 4),
               Text(
                 '$animals Animal${animals > 1 ? 's' : ''}',
-                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey[600],
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -828,7 +566,7 @@ void _listenToDriverDoc() {
           ),
           const SizedBox(height: 12),
 
-          // Action button
+          // Action Button
           if (!isCompleted)
             SizedBox(
               width: double.infinity,
@@ -845,18 +583,16 @@ void _listenToDriverDoc() {
                   );
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: isActive
-                      ? const Color(0xFFF59E0B)
-                      : const Color(0xFF10B981),
+                  backgroundColor: const Color(0xFF10B981),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                child: Text(
-                  isActive ? 'Continue Task' : 'Start Pickup',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                child: const Text(
+                  'Start Pickup',
+                  style: TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             )
@@ -871,8 +607,7 @@ void _listenToDriverDoc() {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.check_circle,
-                      color: Color(0xFF10B981), size: 16),
+                  const Icon(Icons.check_circle, color: Color(0xFF10B981), size: 16),
                   const SizedBox(width: 6),
                   Text(
                     'Completed',
@@ -894,10 +629,8 @@ void _listenToDriverDoc() {
 
   String _getFormattedDate() {
     final now = DateTime.now();
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return '${days[now.weekday - 1]}, ${months[now.month - 1]} ${now.day}, ${now.year}';
   }
@@ -920,25 +653,13 @@ void _listenToDriverDoc() {
     }
   }
 
-  String _statusLabel(String status) {
-    switch (status) {
-      case 'assigned':
-        return 'Assigned';
-      case 'on_the_way':
-        return 'On the way';
-      case 'arrived':
-        return 'Arrived';
-      case 'completed':
-        return 'Completed';
-      default:
-        return 'Pending';
-    }
-  }
 
   List<Widget> _getWasteChips(String wasteType) {
     final types = wasteType.split(',').map((e) => e.trim()).toList();
     if (types.isEmpty || (types.length == 1 && types.first.isEmpty)) {
-      return [_buildWasteChip(wasteType)];
+      return [
+        _buildWasteChip(wasteType),
+      ];
     }
     return types.map((type) => _buildWasteChip(type)).toList();
   }
@@ -1011,16 +732,25 @@ void _listenToDriverDoc() {
     );
   }
 
+  void _generateRoute() {
+    setState(() => _isRouteOptimized = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('✅ Route optimized! Follow the suggested order.'),
+        backgroundColor: Color(0xFF10B981),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Widget _buildStatsPlaceholder() {
     return Row(
       children: [
         _statCard('Total', '--', Icons.list_alt, const Color(0xFF6366F1)),
         const SizedBox(width: 12),
-        _statCard('Pending', '--', Icons.access_time,
-            const Color(0xFFF59E0B)),
+        _statCard('Done', '--', Icons.check_circle, const Color(0xFF10B981)),
         const SizedBox(width: 12),
-        _statCard('Done', '--', Icons.check_circle,
-            const Color(0xFF10B981)),
+        _statCard('Earned', '--', Icons.attach_money, const Color(0xFFF59E0B)),
       ],
     );
   }

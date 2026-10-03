@@ -1,12 +1,18 @@
 // 📁 lib/screens/driver/driver_task_detail.dart
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:async';                    // ✅ NEW: For Timer
+
+import '../../providers/auth_provider.dart';
+import '../../services/location_service.dart';
+import '../../services/routing_service.dart';
+import '../../models/driver_location.dart';
 import 'complete_pickup.dart';
 
 class DriverTaskDetail extends StatefulWidget {
@@ -24,19 +30,24 @@ class DriverTaskDetail extends StatefulWidget {
 }
 
 class _DriverTaskDetailState extends State<DriverTaskDetail> {
-  String _status = 'assigned';
+  // ─── MAP ──────────────────────────────────────
   final MapController _mapController = MapController();
-
-  LatLng? _pickupLocation;
-  LatLng? _driverLocation;
-  double? _distanceKm;
-  bool _loadingLocation = true;
   bool _mapReady = false;
 
-  // ✅ NEW: Trip tracking state
+  // ─── LOCATIONS ────────────────────────────────
+  LatLng? _pickupLocation;
+  LatLng? _driverLocation;
+
+  // ─── ROUTE ────────────────────────────────────
+  RouteResult? _route;
+  bool _loadingRoute = false;
+  String? _routeError;
+
+  // ─── STATE ────────────────────────────────────
+  String _status = 'assigned';
   bool _isTripActive = false;
-  Timer? _tripTimer;
-  double _progress = 0.0;         // 0.0 to 1.0
+  bool _loadingGps = true;
+  StreamSubscription<DocumentSnapshot>? _driverDocSub;
 
   static const LatLng _defaultCenter = LatLng(34.1558, 73.2194);
 
@@ -45,16 +56,20 @@ class _DriverTaskDetailState extends State<DriverTaskDetail> {
     super.initState();
     _status = widget.taskData['status'] ?? 'assigned';
     _loadPickupLocation();
-    _loadDriverLocation();
+    _loadInitialDriverPosition();
+    _listenToDriverDoc();
   }
 
   @override
   void dispose() {
-    _tripTimer?.cancel();          // ✅ NEW: Clean up timer
+    _driverDocSub?.cancel();
+    // Note: We do NOT stop LocationService here — the trip
+    // keeps broadcasting until the driver explicitly stops.
     super.dispose();
   }
 
-  // ─── LOAD PICKUP LOCATION ───
+  // ─── LOAD PICKUP LOCATION ─────────────────────
+
   void _loadPickupLocation() {
     try {
       final lat = widget.taskData['latitude'];
@@ -70,12 +85,13 @@ class _DriverTaskDetailState extends State<DriverTaskDetail> {
         _pickupLocation = LatLng(geo.latitude, geo.longitude);
       }
     } catch (e) {
-      print('Error loading pickup location: $e');
+      debugPrint('[DriverTaskDetail] Pickup load error: $e');
     }
   }
 
-  // ─── LOAD DRIVER LOCATION (GPS) ───
-  Future<void> _loadDriverLocation() async {
+  // ─── INITIAL GPS ──────────────────────────────
+
+  Future<void> _loadInitialDriverPosition() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -90,182 +106,232 @@ class _DriverTaskDetailState extends State<DriverTaskDetail> {
         );
         _driverLocation = LatLng(position.latitude, position.longitude);
 
+        // Fetch route once we have both points
         if (_pickupLocation != null) {
-          _distanceKm = Geolocator.distanceBetween(
-                position.latitude,
-                position.longitude,
-                _pickupLocation!.latitude,
-                _pickupLocation!.longitude,
-              ) /
-              1000;
+          _fetchRoute();
         }
       }
     } catch (e) {
-      print('Driver location error: $e');
+      debugPrint('[DriverTaskDetail] Initial GPS error: $e');
     }
 
     if (mounted) {
-      setState(() => _loadingLocation = false);
+      setState(() => _loadingGps = false);
 
       if (_mapReady && _pickupLocation != null) {
-        _mapController.move(_pickupLocation!, 15);
+        _mapController.move(_pickupLocation!, 14);
       }
     }
   }
 
-  // ✅ NEW: START TRIP (Simulation)
-  void _startTrip() {
-    if (_pickupLocation == null || _driverLocation == null) return;
+  // ─── LISTEN TO DRIVER'S OWN DOC ───────────────
 
-    setState(() {
-      _isTripActive = true;
-      _progress = 0.0;
-    });
+  void _listenToDriverDoc() {
+    final auth = context.read<AuthProvider>();
+    final uid = auth.user?.uid;
+    if (uid == null) return;
 
-    // Update status in Firestore
-    _updateStatus('on_the_way');
+    _driverDocSub = FirebaseFirestore.instance
+        .collection('drivers')
+        .doc(uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (!snapshot.exists || !mounted) return;
 
-    // Send initial driver location
-    _sendDriverLocation();
+      final data = snapshot.data();
+      if (data == null) return;
 
-    // Start simulation: move driver 5% closer every 3 seconds
-    _tripTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (_progress >= 1.0) {
-        timer.cancel();
-        setState(() {
-          _isTripActive = false;
-          _progress = 1.0;
-        });
-        _updateStatus('arrived');
-        return;
-      }
+      final loc = DriverLocation.fromFirestore(data['currentLocation']);
+      if (loc == null) return;
 
-      // Move driver 5% closer to pickup
       setState(() {
-        _progress = (_progress + 0.05).clamp(0.0, 1.0);
-
-        // Interpolate location
-        final startLat = widget.taskData['latitude'] != null
-            ? (widget.taskData['latitude'] as num).toDouble()
-            : _pickupLocation!.latitude;
-
-        final startLng = widget.taskData['longitude'] != null
-            ? (widget.taskData['longitude'] as num).toDouble()
-            : _pickupLocation!.longitude;
-
-        // Simulated driver start (some distance away)
-        final driverStartLat = startLat - 0.01;
-        final driverStartLng = startLng - 0.01;
-
-        _driverLocation = LatLng(
-          driverStartLat + ((startLat - driverStartLat) * _progress),
-          driverStartLng + ((startLng - driverStartLng) * _progress),
-        );
-
-        // Recalculate distance
-        if (_pickupLocation != null) {
-          _distanceKm = Geolocator.distanceBetween(
-                _driverLocation!.latitude,
-                _driverLocation!.longitude,
-                _pickupLocation!.latitude,
-                _pickupLocation!.longitude,
-              ) /
-              1000;
-        }
+        _driverLocation = loc.latLng;
       });
 
-      // Move map to follow driver
-      if (_mapReady && _driverLocation != null) {
-        _mapController.move(_driverLocation!, 15);
+      // Follow the driver's own position
+      if (_mapReady && _isTripActive) {
+        _mapController.move(loc.latLng, 16);
       }
-
-      // Send updated location to Firestore
-      _sendDriverLocation();
     });
   }
 
-  // ✅ NEW: STOP TRIP
-  void _stopTrip() {
-    _tripTimer?.cancel();
+  // ─── FETCH ROUTE FROM OSRM ────────────────────
+
+  Future<void> _fetchRoute() async {
+    if (_driverLocation == null || _pickupLocation == null) return;
+
     setState(() {
-      _isTripActive = false;
+      _loadingRoute = true;
+      _routeError = null;
     });
-    _updateStatus('assigned');
+
+    try {
+      final result = await RoutingService.instance.getRoute(
+        _driverLocation!,
+        _pickupLocation!,
+      );
+      if (mounted) {
+        setState(() {
+          _route = result;
+          _loadingRoute = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _routeError = 'Route unavailable';
+          _loadingRoute = false;
+        });
+      }
+    }
   }
 
-  // ✅ NEW: SEND DRIVER LOCATION TO FIRESTORE
-  Future<void> _sendDriverLocation() async {
-    if (_driverLocation == null) return;
+  // ─── START TRIP (REAL GPS) ────────────────────
 
+  Future<void> _startTrip() async {
+    final auth = context.read<AuthProvider>();
+    final uid = auth.user?.uid;
+    if (uid == null) {
+      _showSnack('Not signed in', isError: true);
+      return;
+    }
+
+    // 1. Start real GPS streaming
+    final ok = await LocationService.instance.startTracking(
+      driverId: uid,
+      taskId: widget.taskId,
+    );
+
+    if (!ok) {
+      _showSnack('Location permission required', isError: true);
+      return;
+    }
+
+    // 2. Update task status
+    await _updateStatus('on_the_way');
+
+    if (mounted) {
+      setState(() => _isTripActive = true);
+      _showSnack('Trip started — broadcasting live location');
+    }
+  }
+
+  // ─── STOP TRIP ────────────────────────────────
+
+  Future<void> _stopTrip() async {
+    await LocationService.instance.stopTracking();
+    await _updateStatus('assigned');
+
+    if (mounted) {
+      setState(() => _isTripActive = false);
+    }
+  }
+
+  // ─── REFRESH ROUTE ────────────────────────────
+
+  Future<void> _refreshRoute() async {
+    if (_driverLocation == null) {
+      // Try to get current GPS first
+      try {
+        final pos = await Geolocator.getCurrentPosition(
+  locationSettings: const LocationSettings(
+    accuracy: LocationAccuracy.high,
+  ),
+);
+        setState(() {
+          _driverLocation = LatLng(pos.latitude, pos.longitude);
+        });
+      } catch (_) {}
+    }
+    await _fetchRoute();
+  }
+
+  // ─── STATUS UPDATE ────────────────────────────
+
+  Future<void> _updateStatus(String newStatus) async {
     try {
       await FirebaseFirestore.instance
           .collection('pickupRequests')
           .doc(widget.taskId)
           .update({
-        'driverLocation': {
-          'latitude': _driverLocation!.latitude,
-          'longitude': _driverLocation!.longitude,
-          'updatedAt': FieldValue.serverTimestamp(),
-          'isTracking': _isTripActive,
-        },
+        'status': newStatus,
+        'updatedAt': FieldValue.serverTimestamp(),
       });
-      print('📍 Location sent: ${_driverLocation!.latitude}, ${_driverLocation!.longitude}');
+      if (mounted) setState(() => _status = newStatus);
     } catch (e) {
-      print('Error sending location: $e');
+      debugPrint('[DriverTaskDetail] Status update error: $e');
     }
   }
 
-  // ─── OPEN NAVIGATION ─────
-  Future<void> _openNavigation() async {
-    if (_pickupLocation == null) return;
+  // ─── CALL CUSTOMER ────────────────────────────
 
-    final url =
-        'https://www.google.com/maps/dir/?api=1&destination=${_pickupLocation!.latitude},${_pickupLocation!.longitude}';
-
-    if (await canLaunchUrl(Uri.parse(url))) {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open navigation')),
-        );
-      }
-    }
-  }
-
-  // ─── CALL CUSTOMER ─────
   Future<void> _callCustomer() async {
     final phone = widget.taskData['userPhone'] ?? '';
     if (phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Customer phone number not available'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showSnack('Customer phone not available', isError: true);
       return;
     }
-
     final url = 'tel:$phone';
     if (await canLaunchUrl(Uri.parse(url))) {
       await launchUrl(Uri.parse(url));
     }
   }
 
-  // ─── DISTANCE TEXT ─────
+  // ─── SNAP TO DRIVER ───────────────────────────
+
+  void _centerOnDriver() {
+    if (_driverLocation != null && _mapReady) {
+      _mapController.move(_driverLocation!, 16);
+    }
+  }
+
+  // ─── SNAP TO FIT BOTH ─────────────────────────
+
+  void _fitBothMarkers() {
+    if (_driverLocation == null || _pickupLocation == null || !_mapReady) {
+      return;
+    }
+    final bounds = LatLngBounds.fromPoints([
+      _driverLocation!,
+      _pickupLocation!,
+    ]);
+    _mapController.fitCamera(
+      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(60)),
+    );
+  }
+
+  // ─── SNACKBAR ─────────────────────────────────
+
+  void _showSnack(String msg, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor:
+            isError ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  // ─── GETTERS ──────────────────────────────────
+
+  double? get _distanceKm => _route?.distanceKm;
+
+  String get _etaText {
+    if (_route == null) return '—';
+    final min = _route!.durationMinutes;
+    if (min < 1) return '< 1 min';
+    return '${min.toStringAsFixed(0)} min';
+  }
+
   String get _distanceText {
     if (_distanceKm == null) return 'Calculating...';
     if (_distanceKm! < 0.1) return 'Less than 100m';
     return '${_distanceKm!.toStringAsFixed(1)} km away';
   }
 
-  // ─── ETA TEXT ─────
-  String get _etaText {
-    if (_distanceKm == null) return 'N/A';
-    final minutes = (_distanceKm! / 30 * 60).round();
-    if (minutes < 1) return '< 1 min';
-    return '$minutes min';
-  }
+  // ─── BUILD ────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -288,6 +354,11 @@ class _DriverTaskDetailState extends State<DriverTaskDetail> {
         ),
         elevation: 0,
         actions: [
+          IconButton(
+            tooltip: 'Refresh route',
+            onPressed: _loadingRoute ? null : _refreshRoute,
+            icon: const Icon(Icons.refresh),
+          ),
           Container(
             margin: const EdgeInsets.only(right: 16),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -309,399 +380,49 @@ class _DriverTaskDetailState extends State<DriverTaskDetail> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ─── MAP AREA ─────────────────────
-            Container(
-              width: double.infinity,
-              height: 280,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: FlutterMap(
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: _pickupLocation ?? _defaultCenter,
-                    initialZoom: 15,
-                    onMapReady: () {
-                      setState(() => _mapReady = true);
-                      if (_pickupLocation != null) {
-                        _mapController.move(_pickupLocation!, 15);
-                      }
-                    },
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.example.eidclean_app',
-                    ),
-                    MarkerLayer(
-                      markers: [
-                        if (_pickupLocation != null)
-                          Marker(
-                            point: _pickupLocation!,
-                            width: 50,
-                            height: 50,
-                            child: const Icon(
-                              Icons.location_on,
-                              color: Color(0xFFEF4444),
-                              size: 40,
-                            ),
-                          ),
-                        if (_driverLocation != null)
-                          Marker(
-                            point: _driverLocation!,
-                            width: 40,
-                            height: 40,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
-                                    blurRadius: 6,
-                                  ),
-                                ],
-                              ),
-                              child: const Icon(
-                                Icons.local_shipping,
-                                color: Color(0xFF10B981),
-                                size: 24,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            // ─── MAP WITH ROUTE ─────────────
+            _buildMap(),
+            const SizedBox(height: 12),
+
+            // ─── ROUTE INFO BANNER ───────────
+            _buildRouteBanner(),
             const SizedBox(height: 16),
 
-            // ✅ NEW: START/STOP TRIP BUTTON
-            SizedBox(
-              width: double.infinity,
-              height: 54,
-              child: ElevatedButton.icon(
-                onPressed: _isTripActive ? _stopTrip : _startTrip,
-                icon: Icon(
-                  _isTripActive ? Icons.stop_circle : Icons.play_circle,
-                  size: 24,
-                ),
-                label: Text(
-                  _isTripActive ? 'Stop Trip' : 'Start Trip',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isTripActive
-                      ? const Color(0xFFEF4444)
-                      : const Color(0xFF2563EB),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
-                ),
-              ),
-            ),
-
-            // ✅ NEW: Trip Progress Bar
-            if (_isTripActive) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: const Color(0xFF10B981).withOpacity(0.3)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.local_shipping,
-                            size: 16, color: Color(0xFF10B981)),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'Trip In Progress',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: Color(0xFF10B981),
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '${(_progress * 100).toInt()}%',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: Color(0xFF10B981),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: _progress,
-                        minHeight: 6,
-                        backgroundColor: Colors.grey[200],
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                            Color(0xFF10B981)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
+            // ─── START/STOP TRIP BUTTON ──────
+            _buildTripButton(),
             const SizedBox(height: 16),
 
-            // ─── NAVIGATE + CALL BUTTONS ─────
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 50,
-                    child: ElevatedButton.icon(
-                      onPressed: _openNavigation,
-                      icon: const Icon(Icons.navigation, size: 20),
-                      label: const Text(
-                        'Navigate',
-                        style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w600),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        elevation: 0,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  height: 50,
-                  width: 60,
-                  child: ElevatedButton(
-                    onPressed: _callCustomer,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF10B981),
-                      foregroundColor: Colors.white,
-                      padding: EdgeInsets.zero,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      elevation: 0,
-                    ),
-                    child: const Icon(Icons.phone, size: 22),
-                  ),
-                ),
-              ],
-            ),
+            // ─── LIVE STATUS ─────────────────
+            if (_isTripActive) _buildLiveStatusBanner(),
+            if (_isTripActive) const SizedBox(height: 16),
+
+            // ─── NAVIGATE + CALL ─────────────
+            _buildActionRow(),
             const SizedBox(height: 20),
 
-            // ─── NEXT PICKUP CARD ─────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Next Pickup',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  Text(
-                    userName,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  if (userPhone.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(Icons.phone,
-                            size: 14, color: Colors.grey[500]),
-                        const SizedBox(width: 4),
-                        Text(
-                          userPhone,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 4),
-
-                  Row(
-                    children: [
-                      Icon(Icons.location_on,
-                          size: 16, color: Colors.grey[500]),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          location,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  Row(
-                    children: [
-                      Icon(Icons.pets,
-                          size: 16, color: Colors.grey[500]),
-                      const SizedBox(width: 4),
-                      Text(
-                        '$animals Animal${animals > 1 ? 's' : ''}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: _getWasteChips(wasteType),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const Divider(height: 20),
-
-                  Row(
-                    children: [
-                      const Icon(Icons.route,
-                          size: 16, color: Color(0xFF10B981)),
-                      const SizedBox(width: 4),
-                      Text(
-                        _distanceText,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      const Icon(Icons.timer,
-                          size: 16, color: Color(0xFF10B981)),
-                      const SizedBox(width: 4),
-                      Text(
-                        'ETA: $_etaText',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF10B981),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  if (timeSlot.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Icon(Icons.access_time,
-                            size: 14, color: Colors.grey[500]),
-                        const SizedBox(width: 4),
-                        Text(
-                          timeSlot,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
+            // ─── PICKUP CARD ─────────────────
+            _buildPickupCard(
+              userName: userName,
+              userPhone: userPhone,
+              location: location,
+              animals: animals,
+              wasteType: wasteType,
+              timeSlot: timeSlot,
             ),
             const SizedBox(height: 20),
 
             // ─── ARRIVED BUTTON ──────────────
-            SizedBox(
-              width: double.infinity,
-              height: 54,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  _tripTimer?.cancel();
-                  _updateStatus('arrived');
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CompletePickup(
-                        taskId: widget.taskId,
-                        taskData: widget.taskData,
-                        distanceKm: _distanceKm,
-                        etaText: _etaText,
-                      ),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.location_on),
-                label: const Text(
-                  "I've Arrived at Location",
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-              ),
-            ),
+            _buildArrivedButton(),
 
             const SizedBox(height: 12),
-
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.grey[600],
+            Center(
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.grey[600],
+                ),
+                child: const Text('Back to Dashboard'),
               ),
-              child: const Text('Back to Dashboard'),
             ),
           ],
         ),
@@ -709,20 +430,543 @@ class _DriverTaskDetailState extends State<DriverTaskDetail> {
     );
   }
 
-  Future<void> _updateStatus(String newStatus) async {
-    try {
-      await FirebaseFirestore.instance
-          .collection('pickupRequests')
-          .doc(widget.taskId)
-          .update({
-        'status': newStatus,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      print('✅ Status updated to: $newStatus');
-    } catch (e) {
-      print('Error updating status: $e');
-    }
+  // ─── MAP WIDGET ───────────────────────────────
+
+  Widget _buildMap() {
+    return Container(
+      width: double.infinity,
+      height: 320,
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          children: [
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _pickupLocation ?? _defaultCenter,
+                initialZoom: 14,
+                onMapReady: () {
+                  _mapReady = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _fitBothMarkers();
+                  });
+                },
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate:
+                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.example.eidclean_app',
+                ),
+
+                // Blue route polyline
+                if (_route != null && _route!.polyline.isNotEmpty)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: _route!.polyline,
+                        strokeWidth: 5.0,
+                        color: _route!.isFallback
+                            ? const Color(0xFF9CA3AF) // grey if fallback
+                            : const Color(0xFF2563EB), // blue if real
+                      ),
+                    ],
+                  ),
+
+                // Markers
+                MarkerLayer(
+                  markers: [
+                    if (_pickupLocation != null)
+                      Marker(
+                        point: _pickupLocation!,
+                        width: 50,
+                        height: 50,
+                        child: const Icon(
+                          Icons.location_on,
+                          color: Color(0xFFEF4444),
+                          size: 42,
+                        ),
+                      ),
+                    if (_driverLocation != null)
+                      Marker(
+                        point: _driverLocation!,
+                        width: 46,
+                        height: 46,
+                        child: Transform.rotate(
+                          angle: ((_route != null && _route!.polyline.length > 1)
+                                  ? 0
+                                  : 0) *
+                              3.14159 /
+                              180,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.25),
+                                  blurRadius: 8,
+                                ),
+                              ],
+                              border: Border.all(
+                                color: const Color(0xFF10B981),
+                                width: 2,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.local_shipping,
+                              color: Color(0xFF10B981),
+                              size: 24,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+
+            // Map control buttons
+            Positioned(
+              bottom: 12,
+              right: 12,
+              child: Column(
+                children: [
+                  _mapControlBtn(
+                    icon: Icons.my_location,
+                    onTap: _centerOnDriver,
+                  ),
+                  const SizedBox(height: 8),
+                  _mapControlBtn(
+                    icon: Icons.center_focus_strong,
+                    onTap: _fitBothMarkers,
+                  ),
+                ],
+              ),
+            ),
+
+            // Route loading overlay
+            if (_loadingRoute)
+              Container(
+                color: Colors.black.withOpacity(0.15),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF10B981),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
+
+  Widget _mapControlBtn({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 3,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Icon(icon, size: 20, color: const Color(0xFF10B981)),
+        ),
+      ),
+    );
+  }
+
+  // ─── ROUTE BANNER ─────────────────────────────
+
+  Widget _buildRouteBanner() {
+    if (_routeError != null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEF3C7),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.warning_amber,
+                color: Color(0xFFD97706), size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _routeError!,
+                style: const TextStyle(
+                  color: Color(0xFF92400E),
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_route == null) {
+      return const SizedBox.shrink();
+    }
+
+    final isFallback = _route!.isFallback;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isFallback
+            ? const Color(0xFFF3F4F6)
+            : const Color(0xFFDBEAFE),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isFallback
+              ? const Color(0xFFD1D5DB)
+              : const Color(0xFF2563EB).withOpacity(0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isFallback ? Icons.route_outlined : Icons.route,
+            color: isFallback
+                ? const Color(0xFF6B7280)
+                : const Color(0xFF2563EB),
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isFallback
+                      ? 'Approximate route (offline)'
+                      : 'Road route ready',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: isFallback
+                        ? const Color(0xFF6B7280)
+                        : const Color(0xFF1E40AF),
+                  ),
+                ),
+                Text(
+                  '$_distanceText • ETA $_etaText',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isFallback
+                        ? const Color(0xFF6B7280)
+                        : const Color(0xFF1E40AF),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── TRIP BUTTON ──────────────────────────────
+
+  Widget _buildTripButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 54,
+      child: ElevatedButton.icon(
+        onPressed: _loadingGps
+            ? null
+            : (_isTripActive ? _stopTrip : _startTrip),
+        icon: Icon(
+          _isTripActive ? Icons.stop_circle : Icons.play_circle,
+          size: 22,
+        ),
+        label: Text(
+          _loadingGps
+              ? 'Getting GPS...'
+              : (_isTripActive ? 'Stop Trip' : 'Start Trip (Go Live)'),
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _isTripActive
+              ? const Color(0xFFEF4444)
+              : const Color(0xFF2563EB),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          elevation: 0,
+        ),
+      ),
+    );
+  }
+
+  // ─── LIVE STATUS BANNER ───────────────────────
+
+  Widget _buildLiveStatusBanner() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10B981).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF10B981).withOpacity(0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: const BoxDecoration(
+              color: Color(0xFF10B981),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'Broadcasting live location to citizen',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                color: Color(0xFF10B981),
+              ),
+            ),
+          ),
+          const Icon(Icons.wifi_tethering,
+              color: Color(0xFF10B981), size: 18),
+        ],
+      ),
+    );
+  }
+
+  // ─── NAVIGATE + CALL ──────────────────────────
+
+  Widget _buildActionRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 50,
+            child: ElevatedButton.icon(
+              onPressed: _refreshRoute,
+              icon: const Icon(Icons.navigation, size: 20),
+              label: const Text(
+                'Refresh Route',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        SizedBox(
+          height: 50,
+          width: 60,
+          child: ElevatedButton(
+            onPressed: _callCustomer,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.zero,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
+            child: const Icon(Icons.phone, size: 22),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── PICKUP CARD ──────────────────────────────
+
+  Widget _buildPickupCard({
+    required String userName,
+    required String userPhone,
+    required String location,
+    required int animals,
+    required String wasteType,
+    required String timeSlot,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Pickup Details',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            userName,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF111827),
+            ),
+          ),
+          if (userPhone.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.phone, size: 14, color: Colors.grey[500]),
+                const SizedBox(width: 4),
+                Text(
+                  userPhone,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Icon(Icons.location_on, size: 16, color: Colors.grey[500]),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  location,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.pets, size: 16, color: Colors.grey[500]),
+              const SizedBox(width: 4),
+              Text(
+                '$animals Animal${animals > 1 ? 's' : ''}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: _getWasteChips(wasteType),
+                ),
+              ),
+            ],
+          ),
+          if (timeSlot.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(Icons.access_time,
+                    size: 14, color: Colors.grey[500]),
+                const SizedBox(width: 4),
+                Text(
+                  timeSlot,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ─── ARRIVED BUTTON ───────────────────────────
+
+  Widget _buildArrivedButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 54,
+      child: ElevatedButton.icon(
+        onPressed: () async {
+          // Stop tracking when arrived
+          if (_isTripActive) {
+            await LocationService.instance.stopTracking();
+          }
+          await _updateStatus('arrived');
+
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CompletePickup(
+                  taskId: widget.taskId,
+                  taskData: widget.taskData,
+                  distanceKm: _distanceKm,
+                  etaText: _etaText,
+                ),
+              ),
+            );
+          }
+        },
+        icon: const Icon(Icons.location_on),
+        label: const Text(
+          "I've Arrived at Location",
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF10B981),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── WASTE CHIPS ──────────────────────────────
 
   List<Widget> _getWasteChips(String wasteType) {
     final types = wasteType.split(',').map((e) => e.trim()).toList();

@@ -6,6 +6,7 @@ import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "../firebase";
 import Sidebar from "../components/Sidebar";
 
+
 export default function Drivers() {
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +44,7 @@ export default function Drivers() {
         createdAt: serverTimestamp(),
       });
 
-      await addDoc(collection(db, "drivers"), {
+      await setDoc(doc(db, "drivers", cred.user.uid), {
         uid: cred.user.uid,
         name: form.name,
         phone: form.phone,
@@ -51,6 +52,14 @@ export default function Drivers() {
         status: "available",
         createdAt: serverTimestamp(),
       });
+      await setDoc(doc(db, "users", cred.user.uid), {
+        uid: cred.user.uid,
+        name: form.name,
+        email: form.email,           // ← make sure form has email
+        phone: form.phone,
+        role: "driver",              // ← set role to driver
+        createdAt: serverTimestamp(),
+     });
 
       setForm({ name:"", email:"", password:"", phone:"", vehicleNumber:"" });
       setShowForm(false);
