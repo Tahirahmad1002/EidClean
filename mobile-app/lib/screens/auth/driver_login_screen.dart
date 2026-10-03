@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
+import '../../theme/app_theme.dart';
+import 'auth_widgets.dart';
 import '../driver/driver_home.dart';
 
 class DriverLoginScreen extends StatefulWidget {
-  const DriverLoginScreen({super.key});
+  /// Called by the hero toggle (true = driver). Provided by LoginScreen.
+  final ValueChanged<bool>? onRoleChanged;
+
+  const DriverLoginScreen({super.key, this.onRoleChanged});
 
   @override
   State<DriverLoginScreen> createState() => _DriverLoginScreenState();
@@ -16,9 +23,6 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
   bool _obscurePassword = true;
   bool _loading = false;
   String? _error;
-
-  static const Color tealColor = Color(0xFF14897A);
-  static const Color darkTeal = Color(0xFF0D6B5E);
 
   Future<void> _login() async {
     setState(() {
@@ -70,280 +74,175 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // ─── LOGO ──────────────────────
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: tealColor,
-                    borderRadius: BorderRadius.circular(22),
-                    boxShadow: [
-                      BoxShadow(
-                        color: tealColor.withOpacity(0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.local_shipping_outlined,
-                    color: Colors.white,
-                    size: 40,
-                  ),
-                ),
-                const SizedBox(height: 14),
+    final media = MediaQuery.of(context);
+    final heroHeight = media.padding.top + 306;
 
-                const Text(
-                  'EidClean',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A1A2E),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'DRIVER PORTAL',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: tealColor,
-                    letterSpacing: 2,
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-
-                // ─── HEADING ──────────────────
-                const Text(
-                  'Driver Login',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A1A2E),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Login credentials provided by admin',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[500],
-                  ),
-                ),
-
-                const SizedBox(height: 28),
-
-                if (_error != null)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.red.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.error_outline, color: Colors.red.shade700, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _error!,
-                            style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+    return AuthSystemUi(
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SingleChildScrollView(
+          child: Column(
+            children: [
+              Stack(
+                children: [
+                  AuthHero(
+                    height: heroHeight,
+                    topSlot: widget.onRoleChanged == null
+                        ? null
+                        : AuthRoleToggle(
+                            isRight: true,
+                            onChanged: widget.onRoleChanged!,
                           ),
-                        ),
-                      ],
-                    ),
+                    child: _buildHeroContent(),
                   ),
-
-                // ─── EMPLOYEE ID ──────────────
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Employee ID',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1A2E),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF5F6F8),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: TextField(
-                    controller: _idController,
-                    decoration: InputDecoration(
-                      hintText: 'Enter your ID',
-                      hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-                      prefixIcon: Icon(Icons.person_outline, color: tealColor, size: 20),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: const Color(0xFFF5F6F8),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // ─── PASSWORD ──────────────────
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Password',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1A2E),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF5F6F8),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: TextField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
-                    decoration: InputDecoration(
-                      hintText: 'Enter password',
-                      hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-                      prefixIcon: Icon(Icons.lock_outline, color: tealColor, size: 20),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                          color: Colors.grey[400],
-                          size: 20,
-                        ),
-                        onPressed: () {
-                          setState(() => _obscurePassword = !_obscurePassword);
-                        },
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: const Color(0xFFF5F6F8),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 28),
-
-                // ─── LOGIN BUTTON ──────────────
-                Container(
-                  height: 56,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [tealColor, darkTeal],
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: tealColor.withOpacity(0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: _loading ? null : _login,
-                      child: Center(
-                        child: _loading
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2.5,
-                                ),
-                              )
-                            : const Text(
-                                'Login to Start',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // ─── INFO BOX ──────────────────
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE6F5F2),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 22,
-                        height: 22,
-                        margin: const EdgeInsets.only(top: 2),
-                        decoration: const BoxDecoration(
-                          color: tealColor,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.priority_high,
-                          color: Colors.white,
-                          size: 14,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Your login credentials are provided by the EidClean administrator. Contact your supervisor if you need help.',
-                          style: TextStyle(
-                            color: tealColor,
-                            fontSize: 13,
-                            height: 1.4,
-                            fontWeight: FontWeight.w500,
+                  Padding(
+                    padding: EdgeInsets.only(top: heroHeight - 56),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 460),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.lg,
                           ),
+                          child: _buildFormCard(),
                         ),
                       ),
-                    ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 460),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                    ),
+                    child: _buildInfoBox(),
                   ),
                 ),
-
-                const SizedBox(height: 16),
-              ],
-            ),
+              ),
+              SizedBox(height: AppSpacing.xxl + media.padding.bottom),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildHeroContent() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const AuthLogoTile(icon: Icons.local_shipping_outlined),
+        const SizedBox(height: 12),
+        const AuthHeroChip(
+          icon: Icons.shield_outlined,
+          label: 'DRIVER PORTAL',
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Driver Login',
+          textAlign: TextAlign.center,
+          style: AppTextStyles.h1.copyWith(
+            color: Colors.white,
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.8,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Login credentials provided by admin',
+          textAlign: TextAlign.center,
+          style: AppTextStyles.body.copyWith(
+            color: AppColors.primaryLight.withValues(alpha: 0.85),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFormCard() {
+    return AuthFormCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_error != null) AuthErrorBox(message: _error!),
+          AuthField(
+            controller: _idController,
+            label: 'Employee ID',
+            hint: 'Enter your ID',
+            icon: Icons.badge_outlined,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          AuthField(
+            controller: _passwordController,
+            label: 'Password',
+            hint: 'Enter password',
+            icon: Icons.lock_outline_rounded,
+            obscure: _obscurePassword,
+            onToggleVisibility: () {
+              setState(() => _obscurePassword = !_obscurePassword);
+            },
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          AuthPrimaryButton(
+            label: 'Login to Start',
+            loading: _loading,
+            onPressed: _loading ? null : _login,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoBox() {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.accentLight.withValues(alpha: 0.55),
+        borderRadius: AppRadius.lgAll,
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: AppRadius.mdAll,
+              border: Border.all(
+                color: AppColors.accent.withValues(alpha: 0.35),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.accent.withValues(alpha: 0.18),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.info_outline,
+              color: AppColors.accentDark,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              'Your login credentials are provided by the EidClean administrator. Contact your supervisor if you need help.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.accentDark,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
