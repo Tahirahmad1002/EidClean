@@ -13,7 +13,10 @@ import AdminLogin from "./pages/AdminLogin";
 import NGOSplash from "./pages/NGOSplash";
 import NGOLogin from "./pages/NGOLogin";
 import NGODashboard from "./pages/NGODashboard";
-
+import NGODonations from "./pages/NGODonations";
+import NGOAcceptedPickups from "./pages/NGOAcceptedPickups";
+import NGOHistory from "./pages/NGOHistory";
+import NGOProfile from "./pages/NGOProfile";
 
 // Admin Pages
 import Dashboard from "./pages/Dashboard";
@@ -41,20 +44,76 @@ export default function App() {
           <Route path="/ngo-splash" element={<NGOSplash />} />
           <Route path="/ngo-login" element={<NGOLogin />} />
           <Route path="/ngo-dashboard" element={<NGODashboard />} />
-
+          <Route path="/ngo-donations" element={<NGODonations />} />
+          <Route path="/ngo-pickups" element={<NGOAcceptedPickups />} />
+          <Route path="/ngo-history" element={<NGOHistory />} />
+          <Route path="/ngo-profile" element={<NGOProfile />} />
 
           {/* Admin Protected Routes */}
-          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-          <Route path="/drivers" element={<ProtectedRoute><Drivers /></ProtectedRoute>} />
-          <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-          <Route path="/areas" element={<ProtectedRoute><Areas /></ProtectedRoute>} />
-          <Route path="/predictions" element={<ProtectedRoute><Predictions /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-
-          {/* NGO Protected Routes (Coming Soon) */}
-          <Route path="/ngo-dashboard" element={<ProtectedRoute><div>NGO Dashboard Coming Soon</div></ProtectedRoute>} />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedRoute>
+                <Reports />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/drivers"
+            element={
+              <ProtectedRoute>
+                <Drivers />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <Analytics />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/areas"
+            element={
+              <ProtectedRoute>
+                <Areas />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/predictions"
+            element={
+              <ProtectedRoute>
+                <Predictions />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <Settings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
