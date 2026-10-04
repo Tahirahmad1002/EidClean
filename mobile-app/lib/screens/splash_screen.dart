@@ -1,3 +1,5 @@
+// lib/screens/splash_screen.dart
+
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -9,18 +11,59 @@ import 'auth/login_screen.dart';
 import 'citizen/citizen_home.dart';
 import 'driver/driver_home.dart';
 
-class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+// ─── TINTS ───────────────────────────────────────────────────────────
 
-  @override
-  State<SplashScreen> createState() => _SplashScreenState();
+class _Tone {
+  final Color bg;
+  final Color bg2;
+  final Color border;
+  final Color from;
+  final Color to;
+  final Color fg;
+  const _Tone({
+    required this.bg,
+    required this.bg2,
+    required this.border,
+    required this.from,
+    required this.to,
+    required this.fg,
+  });
 }
+
+class _Tones {
+  _Tones._();
+
+  static const Color teal700 = Color(0xFF0F766E);
+  static const Color teal300 = Color(0xFF5EEAD4);
+  static const Color amber300 = Color(0xFFFCD34D);
+  static const Color amber200 = Color(0xFFFDE68A);
+
+  static final _Tone amber = _Tone(
+    bg: const Color(0xFFFFFBEB),
+    bg2: const Color(0xFFFEF3C7),
+    border: const Color(0xFFFDE68A),
+    from: const Color(0xFFFCD34D),
+    to: AppColors.accentDark,
+    fg: const Color(0xFFB45309),
+  );
+}
+
+// ─── SPARKS ──────────────────────────────────────────────────────────
 
 class _Spark {
   final Alignment alignment;
   final double size;
   final double phase;
   const _Spark(this.alignment, this.size, this.phase);
+}
+
+// ─── SCREEN ──────────────────────────────────────────────────────────
+
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
 }
 
 class _SplashScreenState extends State<SplashScreen>
@@ -115,7 +158,9 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final media = MediaQuery.of(context);
+    final top = media.padding.top;
+    final bottomInset = media.padding.bottom;
 
     return AuthSystemUi(
       child: Scaffold(
@@ -140,12 +185,8 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
 
-            // Star pattern
-            const Positioned.fill(
-              child: CustomPaint(
-                painter: StarPatternPainter(alpha: 0.05, tile: 48),
-              ),
-            ),
+            // Star lattice, fading toward the left
+            const Positioned.fill(child: _MaskedLattice(alpha: 0.07)),
 
             // Vignette to focus the centre
             Positioned.fill(
@@ -176,6 +217,14 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
             Positioned(
+              top: -90,
+              right: -60,
+              child: GlowCircle(
+                size: 300,
+                color: AppColors.accent.withValues(alpha: 0.30),
+              ),
+            ),
+            Positioned(
               bottom: -170,
               right: -130,
               child: GlowCircle(
@@ -183,8 +232,48 @@ class _SplashScreenState extends State<SplashScreen>
                 color: AppColors.accent.withValues(alpha: 0.16),
               ),
             ),
+            Positioned(
+              bottom: -110,
+              left: 40,
+              child: GlowCircle(
+                size: 280,
+                color: _Tones.teal300.withValues(alpha: 0.12),
+              ),
+            ),
 
-            // Crescent, bottom-right
+            // Glowing amber crescent, top-right
+            Positioned(
+              top: top + 24,
+              right: 28,
+              child: FadeTransition(
+                opacity: _textFade,
+                child: Transform.rotate(
+                  angle: 0.32,
+                  child: Icon(
+                    Icons.nightlight_round,
+                    size: 50,
+                    color: _Tones.amber200.withValues(alpha: 0.92),
+                    shadows: [
+                      Shadow(
+                        color: _Tones.amber300.withValues(alpha: 0.65),
+                        blurRadius: 28,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: top + 80,
+              right: 96,
+              child: Icon(
+                Icons.star_rounded,
+                size: 12,
+                color: _Tones.amber300.withValues(alpha: 0.9),
+              ),
+            ),
+
+            // Crescent watermark, bottom-right
             Positioned(
               bottom: 40,
               right: -34,
@@ -301,6 +390,15 @@ class _SplashScreenState extends State<SplashScreen>
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            Text(
+                              'عيد مبارك',
+                              style: AppTextStyles.body.copyWith(
+                                color: _Tones.amber300,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
                             ShaderMask(
                               blendMode: BlendMode.srcIn,
                               shaderCallback: (rect) => const LinearGradient(
@@ -357,25 +455,37 @@ class _SplashScreenState extends State<SplashScreen>
                       duration: const Duration(seconds: 3),
                       curve: Curves.easeInOut,
                       builder: (context, value, _) {
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: Container(
-                            height: 4,
-                            width: double.infinity,
-                            color: Colors.white.withValues(alpha: 0.10),
-                            alignment: Alignment.centerLeft,
-                            child: FractionallySizedBox(
-                              widthFactor: value,
-                              child: const DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      AppColors.primary,
-                                      AuthColors.emerald400,
-                                      AppColors.accent,
-                                    ],
-                                  ),
+                        return Container(
+                          height: 6,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.28),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.10),
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          alignment: Alignment.centerLeft,
+                          child: FractionallySizedBox(
+                            widthFactor: value.clamp(0.0, 1.0),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    AppColors.primary,
+                                    AuthColors.emerald400,
+                                    _Tones.amber300,
+                                  ],
                                 ),
+                                borderRadius: BorderRadius.circular(999),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.accent
+                                        .withValues(alpha: 0.55),
+                                    blurRadius: 8,
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -407,6 +517,32 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── REUSABLE VISUAL PIECES ──────────────────────────────────────────
+
+/// Star lattice that fades out toward the left.
+class _MaskedLattice extends StatelessWidget {
+  final double alpha;
+  const _MaskedLattice({this.alpha = 0.13});
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (rect) => const LinearGradient(
+          begin: Alignment.centerRight,
+          end: Alignment.centerLeft,
+          colors: [Colors.black, Colors.transparent],
+          stops: [0.0, 0.9],
+        ).createShader(rect),
+        child: CustomPaint(
+          painter: StarPatternPainter(alpha: alpha, tile: 48),
         ),
       ),
     );

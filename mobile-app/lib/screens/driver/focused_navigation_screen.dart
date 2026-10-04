@@ -18,7 +18,94 @@ import '../../providers/auth_provider.dart';
 import '../../services/routing_service.dart';
 import '../../services/location_service.dart';
 import '../../models/driver_location.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
+import '../../theme/app_theme.dart';
+import '../auth/auth_widgets.dart';
 import 'complete_pickup.dart';
+
+// ─── TINTS ───────────────────────────────────────────────────────────
+
+class _Tone {
+  final Color bg;
+  final Color bg2;
+  final Color border;
+  final Color from;
+  final Color to;
+  final Color fg;
+  const _Tone({
+    required this.bg,
+    required this.bg2,
+    required this.border,
+    required this.from,
+    required this.to,
+    required this.fg,
+  });
+}
+
+class _Tones {
+  _Tones._();
+
+  static const Color teal700 = Color(0xFF0F766E);
+  static const Color amber300 = Color(0xFFFCD34D);
+  static const Color amber200 = Color(0xFFFDE68A);
+
+  static final _Tone emerald = _Tone(
+    bg: AppColors.primaryBg,
+    bg2: AppColors.primaryLight,
+    border: AuthColors.emerald200,
+    from: AuthColors.emerald400,
+    to: AppColors.primaryDark,
+    fg: AuthColors.emerald700,
+  );
+
+  static final _Tone amber = _Tone(
+    bg: const Color(0xFFFFFBEB),
+    bg2: const Color(0xFFFEF3C7),
+    border: const Color(0xFFFDE68A),
+    from: const Color(0xFFFCD34D),
+    to: AppColors.accentDark,
+    fg: const Color(0xFFB45309),
+  );
+
+  static final _Tone blue = _Tone(
+    bg: const Color(0xFFEFF6FF),
+    bg2: const Color(0xFFDBEAFE),
+    border: const Color(0xFFBFDBFE),
+    from: const Color(0xFF60A5FA),
+    to: const Color(0xFF2563EB),
+    fg: const Color(0xFF1D4ED8),
+  );
+
+  static final _Tone rose = _Tone(
+    bg: const Color(0xFFFFF1F2),
+    bg2: const Color(0xFFFFE4E6),
+    border: const Color(0xFFFECDD3),
+    from: const Color(0xFFFB7185),
+    to: const Color(0xFFE11D48),
+    fg: const Color(0xFFBE123C),
+  );
+
+  static final _Tone indigo = _Tone(
+    bg: const Color(0xFFEEF2FF),
+    bg2: const Color(0xFFE0E7FF),
+    border: const Color(0xFFC7D2FE),
+    from: const Color(0xFF818CF8),
+    to: const Color(0xFF4F46E5),
+    fg: const Color(0xFF4338CA),
+  );
+
+  static final _Tone slate = _Tone(
+    bg: const Color(0xFFF8FAFC),
+    bg2: const Color(0xFFF1F5F9),
+    border: const Color(0xFFE2E8F0),
+    from: const Color(0xFF94A3B8),
+    to: const Color(0xFF475569),
+    fg: const Color(0xFF334155),
+  );
+}
+
+// ─── SCREEN ──────────────────────────────────────────────────────────
 
 class FocusedNavigationScreen extends StatefulWidget {
   final String taskId;
@@ -325,46 +412,33 @@ class _FocusedNavigationScreenState extends State<FocusedNavigationScreen> {
     await LocationService.instance.stopTracking();
     if (mounted) setState(() => _isNavigating = false);
   }
+
   /// Handle back press — confirm if navigating, then stop tracking.
-Future<void> _handleBack() async {
-  // If actively navigating, ask for confirmation
-  if (_isNavigating) {
-    final shouldExit = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber, color: Color(0xFFF59E0B)),
-            SizedBox(width: 8),
-            Text('Exit Navigation?'),
-          ],
+  Future<void> _handleBack() async {
+    // If actively navigating, ask for confirmation
+    if (_isNavigating) {
+      final shouldExit = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => const _ConfirmDialog(
+          icon: Icons.warning_amber_rounded,
+          toneKey: _DialogTone.amber,
+          title: 'Exit Navigation?',
+          message:
+              'The task will remain "In Progress" — you can continue it later from the dashboard.',
+          cancelLabel: 'Stay',
+          confirmLabel: 'Exit',
+          confirmDanger: true,
         ),
-        content: const Text(
-          'The task will remain "In Progress" — you can continue it later from the dashboard.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Stay'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
-            ),
-            child: const Text('Exit'),
-          ),
-        ],
-      ),
-    );
-    if (shouldExit != true) return;
+      );
+      if (shouldExit != true) return;
+    }
+
+    // Stop GPS tracking before leaving
+    await LocationService.instance.stopTracking();
+
+    if (mounted) Navigator.pop(context);
   }
 
-  // Stop GPS tracking before leaving
-  await LocationService.instance.stopTracking();
-
-  if (mounted) Navigator.pop(context);
-}
   Future<void> _callCustomer() async {
     final phone = widget.taskData['userPhone'] ?? '';
     if (phone.isEmpty) {
@@ -382,33 +456,17 @@ Future<void> _handleBack() async {
     // First confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.location_on, color: Color(0xFF10B981)),
-            SizedBox(width: 8),
-            Text('Confirm Arrival'),
-          ],
-        ),
-        content: Text(
-          _isClose
-              ? 'You are at the pickup location. Confirm to continue to photo capture.'
-              : 'You appear to be ${_distanceToPickupMeters?.toStringAsFixed(0) ?? "?"} m away. '
-                  'Are you sure you have arrived?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Not Yet'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
-            ),
-            child: const Text('Yes, Arrived'),
-          ),
-        ],
+      builder: (ctx) => _ConfirmDialog(
+        icon: Icons.location_on_rounded,
+        toneKey: _DialogTone.emerald,
+        title: 'Confirm Arrival',
+        message: _isClose
+            ? 'You are at the pickup location. Confirm to continue to photo capture.'
+            : 'You appear to be ${_distanceToPickupMeters?.toStringAsFixed(0) ?? "?"} m away. '
+                'Are you sure you have arrived?',
+        cancelLabel: 'Not Yet',
+        confirmLabel: 'Yes, Arrived',
+        confirmDanger: false,
       ),
     );
 
@@ -450,8 +508,7 @@ Future<void> _handleBack() async {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor:
-            isError ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+        backgroundColor: isError ? AppColors.danger : AppColors.primary,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -487,23 +544,48 @@ Future<void> _handleBack() async {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          _buildMap(),
-          SafeArea(child: _buildTopBar()),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: _isNavigating
-                  ? _buildActiveMiniBar()
-                  : _buildPreviewBottomSheet(),
+      backgroundColor: AppColors.slate900,
+      body: AuthSystemUi(
+        child: Stack(
+          children: [
+            _buildMap(),
+
+            // Top scrim for readability of floating controls
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: MediaQuery.of(context).padding.top + 90,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        AuthColors.emerald950.withValues(alpha: 0.5),
+                        AuthColors.emerald950.withValues(alpha: 0.0),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
-        ],
+
+            SafeArea(child: _buildTopBar()),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: _isNavigating
+                    ? _buildActiveMiniBar()
+                    : _buildPreviewBottomSheet(),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -512,6 +594,7 @@ Future<void> _handleBack() async {
 
   Widget _buildMap() {
     final initialZoom = _isNavigating ? 18.0 : 15.0;
+    final tone = _Tones.emerald;
 
     return FlutterMap(
       mapController: _mapController,
@@ -542,9 +625,7 @@ Future<void> _handleBack() async {
               Polyline(
                 points: _route!.polyline,
                 strokeWidth: 6.0,
-                color: _route!.isFallback
-                    ? const Color(0xFF9CA3AF)
-                    : const Color(0xFF2563EB),
+                color: _route!.isFallback ? AppColors.slate400 : _Tones.blue.to,
               ),
             ],
           ),
@@ -556,10 +637,16 @@ Future<void> _handleBack() async {
                 point: _pickupLocation!,
                 width: 56,
                 height: 56,
-                child: const Icon(
-                  Icons.location_on,
-                  color: Color(0xFFEF4444),
+                child: Icon(
+                  Icons.location_on_rounded,
+                  color: _Tones.rose.to,
                   size: 48,
+                  shadows: [
+                    Shadow(
+                      color: _Tones.rose.to.withValues(alpha: 0.5),
+                      blurRadius: 10,
+                    ),
+                  ],
                 ),
               ),
             if (_driverLocation != null)
@@ -569,18 +656,23 @@ Future<void> _handleBack() async {
                 height: 60,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF10B981),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [tone.from, tone.to],
+                    ),
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 3),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.25),
-                        blurRadius: 12,
+                        color: tone.to.withValues(alpha: 0.5),
+                        blurRadius: 14,
+                        offset: const Offset(0, 5),
                       ),
                     ],
                   ),
                   child: const Icon(
-                    Icons.navigation,
+                    Icons.navigation_rounded,
                     color: Colors.white,
                     size: 28,
                   ),
@@ -596,52 +688,58 @@ Future<void> _handleBack() async {
 
   Widget _buildTopBar() {
     if (_isNavigating) {
+      final tone = _Tones.blue;
+
       return Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
             _roundIconButton(
-              icon: Icons.arrow_back,
+              icon: Icons.arrow_back_rounded,
               onTap: _handleBack,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Colors.white, tone.bg],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: tone.border, width: 1.3),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.15),
-                      blurRadius: 10,
+                      color: tone.to.withValues(alpha: 0.25),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
                     ),
                   ],
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.route,
-                        color: Color(0xFF2563EB), size: 22),
-                    const SizedBox(width: 8),
+                    _gradientTile(Icons.route_rounded, tone, size: 32),
+                    const SizedBox(width: 10),
                     Text(
                       _distanceText,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                      style: AppTextStyles.titleLarge.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: tone.fg,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Container(width: 1, height: 18, color: Colors.grey[300]),
-                    const SizedBox(width: 12),
-                    const Icon(Icons.timer,
-                        color: Color(0xFFF59E0B), size: 20),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 10),
+                    Container(width: 1, height: 18, color: tone.border),
+                    const SizedBox(width: 10),
+                    Icon(Icons.timer_rounded, color: _Tones.amber.to, size: 20),
+                    const SizedBox(width: 4),
                     Text(
                       _etaText,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                      style: AppTextStyles.titleLarge.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: _Tones.amber.fg,
                       ),
                     ),
                     const Spacer(),
@@ -651,7 +749,7 @@ Future<void> _handleBack() async {
                         height: 14,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Color(0xFF10B981),
+                          color: AppColors.primary,
                         ),
                       ),
                   ],
@@ -669,17 +767,17 @@ Future<void> _handleBack() async {
       child: Row(
         children: [
           _roundIconButton(
-            icon: Icons.arrow_back,
+            icon: Icons.arrow_back_rounded,
             onTap: () => Navigator.pop(context),
           ),
           const Spacer(),
           _roundIconButton(
-            icon: Icons.my_location,
+            icon: Icons.my_location_rounded,
             onTap: _recenterToDriver,
           ),
           const SizedBox(width: 8),
           _roundIconButton(
-            icon: Icons.center_focus_strong,
+            icon: Icons.center_focus_strong_rounded,
             onTap: _fitToRoute,
           ),
         ],
@@ -691,16 +789,59 @@ Future<void> _handleBack() async {
     required IconData icon,
     required VoidCallback onTap,
   }) {
-    return Material(
-      color: Colors.white,
-      shape: const CircleBorder(),
-      elevation: 3,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Icon(icon, color: const Color(0xFF111827), size: 22),
+    return _PressScale(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: _Tones.emerald.border),
+          boxShadow: [
+            BoxShadow(
+              color: _Tones.emerald.to.withValues(alpha: 0.28),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Icon(icon, color: _Tones.emerald.to, size: 22),
+      ),
+    );
+  }
+
+  // ─── SHEET DECORATION ─────────────────────────
+
+  BoxDecoration _sheetDecoration() {
+    return BoxDecoration(
+      gradient: const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Colors.white, Color(0xFFF0FDF4)],
+      ),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+      border: Border(
+        top: BorderSide(color: AppColors.primaryLight.withValues(alpha: 0.9)),
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: AuthColors.emerald900.withValues(alpha: 0.22),
+          blurRadius: 30,
+          offset: const Offset(0, -10),
+        ),
+      ],
+    );
+  }
+
+  Widget _sheetHandle() {
+    return Center(
+      child: Container(
+        width: 40,
+        height: 4,
+        decoration: BoxDecoration(
+          color: AppColors.slate300,
+          borderRadius: BorderRadius.circular(4),
         ),
       ),
     );
@@ -712,120 +853,29 @@ Future<void> _handleBack() async {
     final userName = widget.taskData['userName'] ?? 'Customer';
     final userPhone = widget.taskData['userPhone'] ?? '';
     final location = widget.taskData['location'] ?? 'Pickup location';
+    final tone = _Tones.emerald;
 
     return Container(
       key: const ValueKey('preview'),
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 20,
-            offset: Offset(0, -4),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+      decoration: _sheetDecoration(),
       child: SafeArea(
         top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
+            _sheetHandle(),
+            const SizedBox(height: 14),
 
             // Route summary
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF10B981), Color(0xFF0F766E)],
-                ),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      children: [
-                        const Icon(Icons.route,
-                            color: Colors.white, size: 24),
-                        const SizedBox(height: 4),
-                        Text(
-                          _distanceText,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 20,
-                          ),
-                        ),
-                        const Text(
-                          'Distance',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(width: 1, height: 40, color: Colors.white24),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        const Icon(Icons.timer,
-                            color: Colors.white, size: 24),
-                        const SizedBox(height: 4),
-                        Text(
-                          _etaText,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 20,
-                          ),
-                        ),
-                        const Text(
-                          'ETA',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
+            _buildSummaryCard(),
+            const SizedBox(height: 14),
 
             // Customer info
             Row(
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: const Icon(
-                    Icons.person,
-                    color: Color(0xFF10B981),
-                    size: 24,
-                  ),
-                ),
+                _gradientTile(Icons.person_rounded, tone, size: 46),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -833,145 +883,122 @@ Future<void> _handleBack() async {
                     children: [
                       Text(
                         userName,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.titleLarge.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.slate900,
                         ),
                       ),
                       if (userPhone.isNotEmpty)
                         Text(
                           userPhone,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.slate600,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                     ],
                   ),
                 ),
                 if (userPhone.isNotEmpty)
-                  SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: ElevatedButton(
-                      onPressed: _callCustomer,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF10B981),
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.zero,
-                        shape: const CircleBorder(),
-                        elevation: 0,
+                  _PressScale(
+                    onTap: _callCustomer,
+                    child: Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [tone.from, tone.to],
+                        ),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.4),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: tone.to.withValues(alpha: 0.4),
+                            blurRadius: 14,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
                       ),
-                      child: const Icon(Icons.phone, size: 20),
+                      child: const Icon(
+                        Icons.phone_rounded,
+                        size: 20,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
               ],
+            ),
+            const SizedBox(height: 12),
+
+            // Location
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _Tones.rose.bg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _Tones.rose.border),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.location_on_rounded,
+                      color: _Tones.rose.to, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      location,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.slate700,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 10),
 
-            // Location
-            Row(
-              children: [
-                const Icon(Icons.location_on,
-                    color: Color(0xFFEF4444), size: 16),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    location,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[700],
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-
             // GPS status
-            Row(
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: _loadingGps
-                        ? const Color(0xFFF59E0B)
-                        : const Color(0xFF10B981),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  _loadingGps ? 'Getting GPS...' : 'GPS ready',
-                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                ),
-              ],
+            _pill(
+              _loadingGps ? 'Getting GPS...' : 'GPS ready',
+              _loadingGps ? _Tones.amber : _Tones.emerald,
+              icon: _loadingGps
+                  ? Icons.gps_not_fixed_rounded
+                  : Icons.gps_fixed_rounded,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
-            // 🆕 TWO BUTTONS: DIRECTIONS + START
+            // DIRECTIONS + START
             Row(
               children: [
-                // DIRECTIONS button (secondary)
                 Expanded(
-                  child: SizedBox(
-                    height: 60,
-                    child: OutlinedButton.icon(
-                      onPressed: _openExternalDirections,
-                      icon: const Icon(Icons.directions, size: 22),
-                      label: const Text(
-                        'DIRECTIONS',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF2563EB),
-                        side: const BorderSide(
-                          color: Color(0xFF2563EB),
-                          width: 2,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
+                  child: _OutlineButton(
+                    label: 'DIRECTIONS',
+                    icon: Icons.directions_rounded,
+                    tone: _Tones.blue,
+                    height: 58,
+                    onTap: _openExternalDirections,
                   ),
                 ),
                 const SizedBox(width: 10),
-
-                // START button (primary)
                 Expanded(
                   flex: 2,
-                  child: SizedBox(
-                    height: 60,
-                    child: ElevatedButton.icon(
-                      onPressed: _loadingGps ? null : _startNavigation,
-                      icon: const Icon(Icons.play_arrow, size: 26),
-                      label: const Text(
-                        'START',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        elevation: 4,
-                        shadowColor:
-                            const Color(0xFF2563EB).withOpacity(0.5),
-                      ),
-                    ),
+                  child: _ToneButton(
+                    label: 'START',
+                    icon: Icons.play_arrow_rounded,
+                    tone: _Tones.blue,
+                    height: 58,
+                    onTap: _loadingGps ? null : _startNavigation,
                   ),
                 ),
               ],
@@ -982,50 +1009,123 @@ Future<void> _handleBack() async {
     );
   }
 
-  // ─── ACTIVE MINI BAR ──────────────────────────
-
-  Widget _buildActiveMiniBar() {
+  Widget _buildSummaryCard() {
     return Container(
-      key: const ValueKey('active'),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primary,
+            AppColors.primaryDark,
+            AuthColors.emerald700,
+          ],
+          stops: [0.0, 0.5, 1.0],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black26,
-            blurRadius: 20,
-            offset: Offset(0, -4),
+            color: AppColors.primary.withValues(alpha: 0.42),
+            blurRadius: 26,
+            offset: const Offset(0, 14),
           ),
         ],
       ),
+      child: Stack(
+        children: [
+          const Positioned.fill(child: _MaskedLattice(alpha: 0.12)),
+          Positioned(
+            top: -60,
+            right: -40,
+            child: GlowCircle(
+              size: 200,
+              color: AppColors.accent.withValues(alpha: 0.45),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _summaryStat(Icons.route_rounded, _distanceText, 'Distance'),
+                  Container(
+                    width: 1,
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    color: Colors.white.withValues(alpha: 0.3),
+                  ),
+                  _summaryStat(Icons.timer_rounded, _etaText, 'ETA'),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryStat(IconData icon, String value, String label) {
+    return Expanded(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: Colors.white, size: 22),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: AppTextStyles.h3.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 20,
+            ),
+          ),
+          Text(
+            label,
+            style: AppTextStyles.caption.copyWith(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── ACTIVE MINI BAR ──────────────────────────
+
+  Widget _buildActiveMiniBar() {
+    final tone = _Tones.emerald;
+
+    return Container(
+      key: const ValueKey('active'),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+      decoration: _sheetDecoration(),
       child: SafeArea(
         top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            _sheetHandle(),
+            const SizedBox(height: 12),
+
             // Arrival hint banner (never auto-completes)
             if (_isClose) ...[
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: const Color(0xFF10B981).withOpacity(0.3),
-                  ),
-                ),
-                child: const Row(
+                decoration: _tintedCardDecoration(tone, 18),
+                child: Row(
                   children: [
-                    Icon(Icons.check_circle,
-                        color: Color(0xFF10B981), size: 22),
-                    SizedBox(width: 10),
+                    _gradientTile(Icons.check_circle_rounded, tone, size: 36),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         "You're close — tap below when you arrive",
-                        style: TextStyle(
-                          color: Color(0xFF10B981),
-                          fontWeight: FontWeight.bold,
+                        style: AppTextStyles.label.copyWith(
+                          color: tone.fg,
+                          fontWeight: FontWeight.w800,
                           fontSize: 13,
                         ),
                       ),
@@ -1042,96 +1142,544 @@ Future<void> _handleBack() async {
                 Container(
                   width: 10,
                   height: 10,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF10B981),
+                  decoration: BoxDecoration(
+                    color: tone.from,
                     shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: tone.from.withValues(alpha: 0.8),
+                        blurRadius: 8,
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'Navigating',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: Color(0xFF10B981),
+                  style: AppTextStyles.titleMedium.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: tone.fg,
                   ),
                 ),
                 const Spacer(),
-                Text(
-                  _distanceText,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
+                _pill(_distanceText, _Tones.blue, icon: Icons.route_rounded),
               ],
             ),
             const SizedBox(height: 12),
 
             // Arrived button — always same text, requires confirmation
-            SizedBox(
-              width: double.infinity,
+            _ToneButton(
+              label: "I've Arrived at Location",
+              icon: Icons.location_on_rounded,
+              tone: _Tones.emerald,
               height: 56,
-              child: ElevatedButton.icon(
-                onPressed: _arrivalConfirmed ? null : _confirmAndArrive,
-                icon: const Icon(Icons.location_on, size: 22),
-                label: const Text(
-                  "I've Arrived at Location",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
+              onTap: _arrivalConfirmed ? null : _confirmAndArrive,
             ),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
 
             // Recenter / Stop row
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _recenterToDriver,
-                    icon: const Icon(Icons.my_location, size: 16),
-                    label: const Text('Recenter'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF10B981),
-                      side: const BorderSide(color: Color(0xFF10B981)),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
+                  child: _OutlineButton(
+                    label: 'Recenter',
+                    icon: Icons.my_location_rounded,
+                    tone: _Tones.emerald,
+                    height: 44,
+                    onTap: _recenterToDriver,
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _stopNavigation,
-                    icon: const Icon(Icons.stop_circle, size: 16),
-                    label: const Text('Stop'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFEF4444),
-                      side: const BorderSide(color: Color(0xFFEF4444)),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
+                  child: _OutlineButton(
+                    label: 'Stop',
+                    icon: Icons.stop_circle_rounded,
+                    tone: _Tones.rose,
+                    height: 44,
+                    onTap: _stopNavigation,
                   ),
                 ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  BoxDecoration _tintedCardDecoration(_Tone tone, double radius) {
+    return BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [tone.bg, tone.bg2],
+      ),
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(color: tone.border, width: 1.3),
+      boxShadow: [
+        BoxShadow(
+          color: tone.to.withValues(alpha: 0.16),
+          blurRadius: 22,
+          offset: const Offset(0, 10),
+        ),
+        BoxShadow(
+          color: AppColors.slate900.withValues(alpha: 0.04),
+          blurRadius: 4,
+          offset: const Offset(0, 1),
+        ),
+      ],
+    );
+  }
+
+  Widget _pill(String text, _Tone tone, {IconData? icon}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: tone.bg2,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: tone.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: tone.to),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            text,
+            style: AppTextStyles.labelSmall.copyWith(
+              fontWeight: FontWeight.w800,
+              color: tone.fg,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── CONFIRM DIALOG ──────────────────────────────────────────────────
+
+enum _DialogTone { emerald, amber }
+
+class _ConfirmDialog extends StatelessWidget {
+  final IconData icon;
+  final _DialogTone toneKey;
+  final String title;
+  final String message;
+  final String cancelLabel;
+  final String confirmLabel;
+  final bool confirmDanger;
+
+  const _ConfirmDialog({
+    required this.icon,
+    required this.toneKey,
+    required this.title,
+    required this.message,
+    required this.cancelLabel,
+    required this.confirmLabel,
+    required this.confirmDanger,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tone = toneKey == _DialogTone.amber ? _Tones.amber : _Tones.emerald;
+    final confirmTone = confirmDanger ? _Tones.rose : _Tones.emerald;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.white, Color(0xFFF0FDF4)],
+          ),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: tone.border),
+          boxShadow: [
+            BoxShadow(
+              color: AuthColors.emerald950.withValues(alpha: 0.30),
+              blurRadius: 30,
+              offset: const Offset(0, 14),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _gradientTile(icon, tone, size: 44),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: AppTextStyles.titleLarge.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.slate900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              message,
+              style: AppTextStyles.body.copyWith(
+                color: AppColors.slate600,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: _PressScale(
+                    onTap: () => Navigator.pop(context, false),
+                    child: Container(
+                      height: 48,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _Tones.slate.bg2,
+                        borderRadius: AppRadius.lgAll,
+                        border: Border.all(color: _Tones.slate.border),
+                      ),
+                      child: Text(
+                        cancelLabel,
+                        style: AppTextStyles.button.copyWith(
+                          color: _Tones.slate.fg,
+                          fontSize: 14.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: _ToneButton(
+                    label: confirmLabel,
+                    icon: confirmDanger
+                        ? Icons.logout_rounded
+                        : Icons.check_circle_rounded,
+                    tone: confirmTone,
+                    onTap: () => Navigator.pop(context, true),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── SHARED GRADIENT TILE ────────────────────────────────────────────
+
+Widget _gradientTile(IconData icon, _Tone tone, {double size = 36}) {
+  return Container(
+    width: size,
+    height: size,
+    clipBehavior: Clip.antiAlias,
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [tone.from, tone.to],
+      ),
+      borderRadius: BorderRadius.circular(size * 0.32),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
+      boxShadow: [
+        BoxShadow(
+          color: tone.to.withValues(alpha: 0.40),
+          blurRadius: 14,
+          offset: const Offset(0, 6),
+        ),
+      ],
+    ),
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: size * 0.5,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white.withValues(alpha: 0.38),
+                  Colors.white.withValues(alpha: 0.0),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Icon(icon, color: Colors.white, size: size * 0.52),
+      ],
+    ),
+  );
+}
+
+// ─── REUSABLE VISUAL PIECES ──────────────────────────────────────────
+
+class _MaskedLattice extends StatelessWidget {
+  final double alpha;
+  const _MaskedLattice({this.alpha = 0.13});
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (rect) => const LinearGradient(
+          begin: Alignment.centerRight,
+          end: Alignment.centerLeft,
+          colors: [Colors.black, Colors.transparent],
+          stops: [0.0, 0.9],
+        ).createShader(rect),
+        child: CustomPaint(
+          painter: StarPatternPainter(alpha: alpha, tile: 44),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tone-coloured gradient button with gloss and coloured shadow.
+/// A null [onTap] renders the disabled state.
+class _ToneButton extends StatefulWidget {
+  final String label;
+  final IconData icon;
+  final _Tone tone;
+  final VoidCallback? onTap;
+  final double height;
+  final bool loading;
+
+  const _ToneButton({
+    required this.label,
+    required this.icon,
+    required this.tone,
+    required this.onTap,
+    this.height = 48,
+    this.loading = false,
+  });
+
+  @override
+  State<_ToneButton> createState() => _ToneButtonState();
+}
+
+class _ToneButtonState extends State<_ToneButton> {
+  bool _pressed = false;
+
+  void _set(bool v) {
+    if (_pressed != v) setState(() => _pressed = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tone = widget.tone;
+    final enabled = widget.onTap != null;
+
+    return Opacity(
+      opacity: enabled || widget.loading ? 1 : 0.55,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: enabled ? (_) => _set(true) : null,
+        onTapUp: enabled ? (_) => _set(false) : null,
+        onTapCancel: enabled ? () => _set(false) : null,
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _pressed ? 0.97 : 1,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          child: Container(
+            height: widget.height,
+            width: double.infinity,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [tone.from, tone.to],
+              ),
+              borderRadius: AppRadius.lgAll,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+              boxShadow: [
+                BoxShadow(
+                  color: tone.to.withValues(alpha: _pressed ? 0.25 : 0.45),
+                  blurRadius: _pressed ? 10 : 20,
+                  offset: Offset(0, _pressed ? 3 : 9),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: widget.height / 2,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.28),
+                          Colors.white.withValues(alpha: 0.0),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.loading)
+                        const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.5,
+                          ),
+                        )
+                      else
+                        Icon(widget.icon, size: 18, color: Colors.white),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          widget.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.button.copyWith(
+                            color: Colors.white,
+                            fontSize: 14.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// White button with a tone-coloured outline (secondary action).
+class _OutlineButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final _Tone tone;
+  final VoidCallback? onTap;
+  final double height;
+
+  const _OutlineButton({
+    required this.label,
+    required this.icon,
+    required this.tone,
+    required this.onTap,
+    this.height = 48,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: _PressScale(
+        onTap: onTap ?? () {},
+        child: Container(
+          height: height,
+          width: double.infinity,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.white, tone.bg],
+            ),
+            borderRadius: AppRadius.lgAll,
+            border: Border.all(color: tone.to, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: tone.to.withValues(alpha: 0.14),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: tone.to),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.button.copyWith(
+                    color: tone.fg,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PressScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const _PressScale({required this.child, required this.onTap});
+
+  @override
+  State<_PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<_PressScale> {
+  bool _pressed = false;
+
+  void _set(bool v) {
+    if (_pressed != v) setState(() => _pressed = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _set(true),
+      onTapUp: (_) => _set(false),
+      onTapCancel: () => _set(false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _pressed ? 0.94 : 1,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: widget.child,
       ),
     );
   }
