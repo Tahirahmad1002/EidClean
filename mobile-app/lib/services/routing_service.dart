@@ -58,7 +58,7 @@ class RoutingService {
 
   /// ⚠️ OPTIONAL: Add your own ORS key from https://openrouteservice.org/dev/#/signup
   /// Free tier: 2,000 requests/day. Leave empty to skip ORS fallback.
-  static const String _orsApiKey = '';
+    static const String _orsApiKey = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjMzMDZiZGVlNmYyNDQ1OTE5OTg2Mzk3MWZhMmFhMmFmIiwiaCI6Im11cm11cjY0In0=';
 
   static const String _userAgent = 'EidCleanApp/1.0 (contact@eidclean.pk)';
   static const Duration _timeout = Duration(seconds: 8);

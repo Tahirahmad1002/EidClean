@@ -1,6 +1,6 @@
 // src/pages/Dashboard.jsx
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 import Sidebar from "../components/Sidebar";
@@ -30,7 +30,6 @@ import {
   Card,
   CardBody,
   CardHeader,
-  EmptyState,
   StatCard,
   Table,
   TableBody,
@@ -40,8 +39,69 @@ import {
   TableRow,
 } from "../components/ui";
 import { cn } from "../lib/utils";
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { LOCALITIES } from "../data/localities";
 
-// Eight-pointed star lattice used as brand texture
+// Fix Leaflet default marker icons in Vite/React
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+// --------------------------------------------------------------------
+// ML API config (same as Predictions page)
+// --------------------------------------------------------------------
+const ML_API_URL = "https://eidclean-production.up.railway.app";
+
+async function callPredictionAPI(payload) {
+  const response = await fetch(`${ML_API_URL}/predict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`API status ${response.status}`);
+  }
+  return response.json();
+}
+
+// Pick the top N localities by population
+const TOP_LOCALITIES = [...LOCALITIES]
+  .sort((a, b) => b.population - a.population)
+  .slice(0, 3);
+
+// --------------------------------------------------------------------
+// Area extraction from location string
+// --------------------------------------------------------------------
+// Location examples:
+//   "Combined Military Hospital, Karakoram Highway, Karimpura, Kehal, Abbottabad, ..."
+//   "Supply Bazar, Abbottabad, ..."
+// We take the LAST meaningful segment before "Abbottabad".
+function extractArea(location) {
+  if (!location || typeof location !== "string") return "Unknown";
+  const parts = location.split(",").map((s) => s.trim()).filter(Boolean);
+
+  // Find index of "Abbottabad" (case insensitive)
+  const abbotIndex = parts.findIndex((p) =>
+    p.toLowerCase().includes("abbottabad")
+  );
+
+  if (abbotIndex > 0) {
+    // Take the segment right before "Abbottabad"
+    return parts[abbotIndex - 1];
+  }
+
+  // Fallback: return the second segment, or the whole thing
+  return parts.length > 1 ? parts[1] : parts[0] || "Unknown";
+}
+
+// --------------------------------------------------------------------
+// Lattice pattern (unchanged)
+// --------------------------------------------------------------------
 function Lattice({ id, className }) {
   return (
     <svg className={cn("pointer-events-none absolute", className)} aria-hidden="true">
@@ -63,18 +123,14 @@ const statTones = {
   green: "border-emerald-200/70 from-emerald-50 via-white to-white before:bg-emerald-300/40 after:via-emerald-400/70 hover:shadow-emerald-900/10",
 };
 
-const insights = [
-  { label: "Peak Hours", value: "9–11 AM, 4–6 PM", icon: Clock, bar: "before:bg-blue-500", tile: "bg-blue-50 text-blue-600 ring-blue-100", text: "text-blue-700" },
-  { label: "High Demand", value: "Supply Bazar (+35%)", icon: TrendingUp, bar: "before:bg-amber-500", tile: "bg-amber-50 text-amber-600 ring-amber-100", text: "text-amber-700" },
-  { label: "Tip", value: "Add 2 more drivers to Mirpur", icon: Lightbulb, bar: "before:bg-emerald-500", tile: "bg-emerald-50 text-emerald-600 ring-emerald-100", text: "text-emerald-700" },
-];
-
-// Shared responsive spacing: compact on laptops, roomy on large screens
 const sectionGap = "mb-5 sm:mb-6 2xl:mb-8";
 const cardHeaderPad = "px-4 py-3.5 sm:px-5 2xl:px-6 2xl:py-5";
 const cardBodyPad = "px-4 py-4 sm:px-5 sm:py-5 2xl:px-6 2xl:py-6";
 const cellPad = "px-4 py-3 sm:px-5 2xl:px-6 2xl:py-4";
 
+// --------------------------------------------------------------------
+// Pending Area Row (unchanged design)
+// --------------------------------------------------------------------
 function PendingAreaRow({ area, requests, status, action }) {
   const statusColors = {
     Pending: "yellow",
@@ -121,8 +177,13 @@ function PendingAreaRow({ area, requests, status, action }) {
   );
 }
 
+// --------------------------------------------------------------------
+// Main Dashboard
+// --------------------------------------------------------------------
 export default function Dashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -131,9 +192,16 @@ export default function Dashboard() {
     drivers: 0,
     areas: 0,
   });
+  const [pickupRequests, setPickupRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
 
+  // AI predictions for the top 3 localities
+  const [aiPredictions, setAiPredictions] = useState([]);
+  const [aiLoading, setAiLoading] = useState(true);
+
+  // ----------------------------------------------------------------
+  // Fetch all Firestore data once
+  // ----------------------------------------------------------------
   useEffect(() => {
     async function fetchStats() {
       try {
@@ -141,12 +209,15 @@ export default function Dashboard() {
         const driversSnap = await getDocs(collection(db, "drivers"));
         const areasSnap = await getDocs(collection(db, "areas"));
 
-        const pending = requestsSnap.docs.filter(d => d.data().status === "pending").length;
-        const assigned = requestsSnap.docs.filter(d => d.data().status === "assigned").length;
-        const completed = requestsSnap.docs.filter(d => d.data().status === "completed").length;
+        const requests = requestsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setPickupRequests(requests);
+
+        const pending = requests.filter((r) => r.status === "pending").length;
+        const assigned = requests.filter((r) => r.status === "assigned").length;
+        const completed = requests.filter((r) => r.status === "completed").length;
 
         setStats({
-          total: requestsSnap.size,
+          total: requests.length,
           pending,
           assigned,
           completed,
@@ -161,20 +232,130 @@ export default function Dashboard() {
     fetchStats();
   }, []);
 
-  // Dummy AI predictions data
-  const aiPredictions = [
-    { area: "Jinnahabad", trucks: 3, workers: 6, bins: 12 },
-    { area: "Nawanshehr", trucks: 2, workers: 4, bins: 8 },
-    { area: "Mirpur", trucks: 2, workers: 5, bins: 10 },
-  ];
+  // ----------------------------------------------------------------
+  // Fetch AI predictions for top 3 localities
+  // ----------------------------------------------------------------
+  useEffect(() => {
+    async function fetchAiPredictions() {
+      try {
+        const results = await Promise.all(
+          TOP_LOCALITIES.map(async (loc) => {
+            const prediction = await callPredictionAPI({
+              population: loc.population,
+              housing: loc.housing,
+              participation_rate: loc.participationRate,
+              area_type: loc.areaType,
+              eid_day: 1,
+            });
+            return {
+              area: loc.name,
+              trucks: prediction.trucks,
+              workers: prediction.workers,
+              bins: prediction.bins,
+              waste_kg: prediction.waste_kg,
+            };
+          })
+        );
+        setAiPredictions(results);
+      } catch (error) {
+        console.error("Error fetching AI predictions:", error);
+      }
+      setAiLoading(false);
+    }
+    fetchAiPredictions();
+  }, []);
 
-  // Pending pickups by area (dummy data for now)
-  const pendingAreas = [
-    { area: "Jinnahabad", requests: 12, status: "Pending", action: "Assign" },
-    { area: "Nawanshehr", requests: 8, status: "Assigned", action: "Track" },
-    { area: "Mirpur", requests: 5, status: "Completed", action: "View" },
-    { area: "Supply Bazar", requests: 15, status: "Pending", action: "Assign" },
-  ];
+  // ----------------------------------------------------------------
+  // Aggregate pickupRequests by area (real data)
+  // ----------------------------------------------------------------
+  const pendingAreas = useMemo(() => {
+    if (pickupRequests.length === 0) return [];
+
+    const areaMap = new Map();
+    for (const req of pickupRequests) {
+      const area = extractArea(req.location);
+      if (!areaMap.has(area)) {
+        areaMap.set(area, { pending: 0, assigned: 0, completed: 0, total: 0 });
+      }
+      const entry = areaMap.get(area);
+      entry.total += 1;
+      if (req.status === "pending") entry.pending += 1;
+      else if (req.status === "assigned") entry.assigned += 1;
+      else if (req.status === "completed") entry.completed += 1;
+    }
+
+    // Convert to array, pick dominant status per area, sort by total
+    return Array.from(areaMap.entries())
+      .map(([area, counts]) => {
+        let status = "Completed";
+        let action = "View";
+        if (counts.pending > 0) {
+          status = "Pending";
+          action = "Assign";
+        } else if (counts.assigned > 0) {
+          status = "Assigned";
+          action = "Track";
+        }
+        return { area, requests: counts.total, status, action };
+      })
+      .sort((a, b) => b.requests - a.requests)
+      .slice(0, 8);
+  }, [pickupRequests]);
+
+  // ----------------------------------------------------------------
+  // Smart Insights (real data)
+  // ----------------------------------------------------------------
+  const smartInsights = useMemo(() => {
+    // Insight 1: top pending area
+    const pendingByArea = new Map();
+    for (const req of pickupRequests) {
+      if (req.status !== "pending") continue;
+      const area = extractArea(req.location);
+      pendingByArea.set(area, (pendingByArea.get(area) || 0) + 1);
+    }
+    const topPending = [...pendingByArea.entries()].sort((a, b) => b[1] - a[1])[0];
+
+    // Insight 2: highest predicted waste locality
+    const topWaste = aiPredictions
+      .slice()
+      .sort((a, b) => b.waste_kg - a.waste_kg)[0];
+
+    // Insight 3: active drivers
+    const driverCount = stats.drivers;
+
+    return [
+      {
+        label: "Top Pending Area",
+        value: topPending
+          ? `${topPending[0]} (${topPending[1]} pending)`
+          : "No pending requests",
+        icon: Clock,
+        bar: "before:bg-blue-500",
+        tile: "bg-blue-50 text-blue-600 ring-blue-100",
+        text: "text-blue-700",
+      },
+      {
+        label: "Highest Waste Estimate",
+        value: topWaste
+          ? `${topWaste.area} (~${Math.round(topWaste.waste_kg).toLocaleString()} kg)`
+          : "Loading...",
+        icon: TrendingUp,
+        bar: "before:bg-amber-500",
+        tile: "bg-amber-50 text-amber-600 ring-amber-100",
+        text: "text-amber-700",
+      },
+      {
+        label: "Active Drivers",
+        value: driverCount === 0
+          ? "No drivers registered"
+          : `${driverCount} registered driver${driverCount === 1 ? "" : "s"}`,
+        icon: Lightbulb,
+        bar: "before:bg-emerald-500",
+        tile: "bg-emerald-50 text-emerald-600 ring-emerald-100",
+        text: "text-emerald-700",
+      },
+    ];
+  }, [pickupRequests, aiPredictions, stats.drivers]);
 
   const heroStats = [
     { label: "Pending", value: stats.pending, icon: Clock },
@@ -184,6 +365,22 @@ export default function Dashboard() {
 
   const shell = "ml-64 min-h-screen min-w-0 flex-1 bg-slate-50 bg-[radial-gradient(70rem_26rem_at_50%_-10rem,rgba(16,185,129,0.14),transparent)]";
 
+  // ----------------------------------------------------------------
+  // Compute map center from real requests (fallback to Abbottabad)
+  // ----------------------------------------------------------------
+  const mapCenter = useMemo(() => {
+    const valid = pickupRequests.filter(
+      (r) => typeof r.latitude === "number" && typeof r.longitude === "number"
+    );
+    if (valid.length === 0) return [34.1688, 73.2215]; // Abbottabad center
+    const avgLat = valid.reduce((s, r) => s + r.latitude, 0) / valid.length;
+    const avgLng = valid.reduce((s, r) => s + r.longitude, 0) / valid.length;
+    return [avgLat, avgLng];
+  }, [pickupRequests]);
+
+  // ----------------------------------------------------------------
+  // Loading screen (unchanged)
+  // ----------------------------------------------------------------
   if (loading) {
     return (
       <div className="flex">
@@ -275,7 +472,13 @@ export default function Dashboard() {
               { label: "Total Pickups", value: stats.total, icon: ClipboardList, variant: "blue", description: "All pickup requests" },
               { label: "Active Drivers", value: stats.drivers, icon: Truck, variant: "teal", description: "Registered drivers" },
               { label: "Areas Managed", value: stats.areas, icon: MapIcon, variant: "yellow", description: "Service zones" },
-              { label: "On-Time Rate", value: "89%", icon: CircleCheck, variant: "green", description: "Pickups on schedule" },
+              {
+                label: "Completion Rate",
+                value: stats.total > 0 ? `${Math.round((stats.completed / stats.total) * 100)}%` : "—",
+                icon: CircleCheck,
+                variant: "green",
+                description: "Pickups completed",
+              },
             ].map((card) => (
               <StatCard
                 key={card.label}
@@ -325,36 +528,47 @@ export default function Dashboard() {
               </CardHeader>
               <CardBody className={cardBodyPad}>
                 <p className="mb-4 max-w-lg text-sm leading-relaxed text-emerald-100/65 2xl:mb-5">
-                  AI predicts resource needs per area based on population density & past Eid data.
+                  Live predictions from our RandomForest model for the three largest localities in Abbottabad (Eid Day 1).
                 </p>
                 <div className="space-y-2">
-                  {aiPredictions.map((item) => (
-                    <div
-                      key={item.area}
-                      className="flex flex-col gap-2.5 rounded-xl bg-white/[0.04] px-3.5 py-2.5 ring-1 ring-white/10 transition-all duration-150 hover:bg-white/[0.08] hover:ring-white/20 sm:flex-row sm:items-center sm:justify-between 2xl:px-4 2xl:py-3.5"
-                    >
-                      <span className="flex items-center gap-2.5 text-sm font-semibold text-white">
-                        <MapPin className="h-4 w-4 text-emerald-300/70" aria-hidden="true" />
-                        {item.area}
-                      </span>
-                      <div className="grid grid-cols-3 gap-2 text-sm">
-                        {[
-                          { icon: Truck, tone: "text-amber-300", n: item.trucks, l: "trucks" },
-                          { icon: HardHat, tone: "text-sky-300", n: item.workers, l: "workers" },
-                          { icon: Trash2, tone: "text-emerald-300", n: item.bins, l: "bins" },
-                        ].map((m) => (
-                          <span
-                            key={m.l}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-black/20 px-2.5 py-1.5 ring-1 ring-white/10 2xl:gap-2 2xl:px-3"
-                          >
-                            <m.icon className={cn("h-4 w-4", m.tone)} aria-hidden="true" />
-                            <span className="font-semibold tabular-nums text-white">{m.n}</span>
-                            <span className="text-xs text-emerald-100/55">{m.l}</span>
-                          </span>
-                        ))}
-                      </div>
+                  {aiLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <LoaderCircle className="h-5 w-5 animate-spin text-emerald-300/60" aria-hidden="true" />
+                      <span className="ml-3 text-sm text-emerald-100/60">Loading predictions...</span>
                     </div>
-                  ))}
+                  ) : aiPredictions.length === 0 ? (
+                    <div className="rounded-xl bg-white/[0.04] px-4 py-3 text-center text-sm text-emerald-100/60 ring-1 ring-white/10">
+                      Predictions unavailable — check API connection
+                    </div>
+                  ) : (
+                    aiPredictions.map((item) => (
+                      <div
+                        key={item.area}
+                        className="flex flex-col gap-2.5 rounded-xl bg-white/[0.04] px-3.5 py-2.5 ring-1 ring-white/10 transition-all duration-150 hover:bg-white/[0.08] hover:ring-white/20 sm:flex-row sm:items-center sm:justify-between 2xl:px-4 2xl:py-3.5"
+                      >
+                        <span className="flex items-center gap-2.5 text-sm font-semibold text-white">
+                          <MapPin className="h-4 w-4 text-emerald-300/70" aria-hidden="true" />
+                          {item.area}
+                        </span>
+                        <div className="grid grid-cols-3 gap-2 text-sm">
+                          {[
+                            { icon: Truck, tone: "text-amber-300", n: item.trucks, l: "trucks" },
+                            { icon: HardHat, tone: "text-sky-300", n: item.workers, l: "workers" },
+                            { icon: Trash2, tone: "text-emerald-300", n: item.bins, l: "bins" },
+                          ].map((m) => (
+                            <span
+                              key={m.l}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-black/20 px-2.5 py-1.5 ring-1 ring-white/10 2xl:gap-2 2xl:px-3"
+                            >
+                              <m.icon className={cn("h-4 w-4", m.tone)} aria-hidden="true" />
+                              <span className="font-semibold tabular-nums text-white">{m.n}</span>
+                              <span className="text-xs text-emerald-100/55">{m.l}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
                 <Button
                   variant="primary"
@@ -380,11 +594,11 @@ export default function Dashboard() {
                   <h3 className="text-[15px] font-semibold tracking-tight text-slate-900 2xl:text-base">
                     Smart Insights
                   </h3>
-                  <p className="text-xs text-slate-500">What needs attention</p>
+                  <p className="text-xs text-slate-500">Live data from Firestore &amp; ML</p>
                 </div>
               </CardHeader>
               <CardBody className="space-y-2.5 px-4 py-4 sm:px-5 2xl:space-y-3 2xl:py-5">
-                {insights.map((item) => (
+                {smartInsights.map((item) => (
                   <div
                     key={item.label}
                     className={cn(
@@ -398,7 +612,7 @@ export default function Dashboard() {
                     </div>
                     <div className="min-w-0">
                       <p className={cn("text-xs font-medium", item.text)}>{item.label}</p>
-                      <p className="mt-0.5 text-sm font-semibold text-slate-900">{item.value}</p>
+                      <p className="mt-0.5 text-sm font-semibold text-slate-900 break-words">{item.value}</p>
                     </div>
                   </div>
                 ))}
@@ -406,7 +620,7 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* Live Map Placeholder */}
+          {/* Live Pickup Map — real data */}
           <Card padding="none" className={cn("overflow-hidden", sectionGap)}>
             <CardHeader className={cn("flex flex-wrap items-center justify-between gap-3", cardHeaderPad)}>
               <div className="flex items-center gap-3">
@@ -417,48 +631,97 @@ export default function Dashboard() {
                   <h3 className="text-[15px] font-semibold tracking-tight text-slate-900 2xl:text-base">
                     Live Pickup Map — Abbottabad
                   </h3>
-                  <p className="text-xs text-slate-500">Pickups and vehicles in real time</p>
+                  <p className="text-xs text-slate-500">
+                    {pickupRequests.length} pickup{pickupRequests.length === 1 ? "" : "s"} on the map
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
                 <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 shadow-sm ring-1 ring-slate-200">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Pickup
+                  <span className="h-2 w-2 rounded-full bg-amber-500"></span> Pending
                 </span>
                 <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 shadow-sm ring-1 ring-slate-200">
-                  <span className="h-2 w-2 rounded-full bg-blue-500"></span> Vehicle
+                  <span className="h-2 w-2 rounded-full bg-blue-500"></span> Assigned
+                </span>
+                <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 shadow-sm ring-1 ring-slate-200">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Completed
                 </span>
               </div>
             </CardHeader>
-            <div className="relative flex h-52 items-center justify-center overflow-hidden bg-slate-50 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:32px_32px] sm:h-60 2xl:h-80">
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(248,250,252,0.9)_100%)]" aria-hidden="true" />
-              {/* Decorative pins */}
-              <span className="absolute left-[18%] top-[28%] flex h-3 w-3" aria-hidden="true">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60"></span>
-                <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-white"></span>
-              </span>
-              <span className="absolute left-[72%] top-[24%] flex h-3 w-3" aria-hidden="true">
-                <span className="relative inline-flex h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white"></span>
-              </span>
-              <span className="absolute left-[30%] top-[70%] flex h-3 w-3" aria-hidden="true">
-                <span className="relative inline-flex h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white"></span>
-              </span>
-              <span className="absolute left-[80%] top-[68%] flex h-3 w-3" aria-hidden="true">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60"></span>
-                <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-white"></span>
-              </span>
-
-              <EmptyState
-                icon={MapIcon}
-                variant="green"
-                title="Live map coming soon"
-                description="Real-time pickup tracking will appear here"
-                bordered={false}
-                className="relative z-10 mx-auto max-w-sm rounded-2xl bg-white/90 px-5 py-5 shadow-xl shadow-slate-900/5 ring-1 ring-slate-200 backdrop-blur 2xl:py-8"
-              />
+            <div className="relative h-80 w-full overflow-hidden bg-slate-100 sm:h-96 2xl:h-[28rem]">
+              <MapContainer
+                center={mapCenter}
+                zoom={12}
+                scrollWheelZoom={false}
+                style={{ height: "100%", width: "100%" }}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                {pickupRequests
+                  .filter((r) => typeof r.latitude === "number" && typeof r.longitude === "number")
+                  .map((req) => {
+                    const color =
+                      req.status === "pending"
+                        ? "#f59e0b"
+                        : req.status === "assigned"
+                        ? "#3b82f6"
+                        : "#10b981";
+                    return (
+                      <CircleMarker
+                        key={req.id}
+                        center={[req.latitude, req.longitude]}
+                        radius={8}
+                        pathOptions={{
+                          color: "#ffffff",
+                          weight: 2,
+                          fillColor: color,
+                          fillOpacity: 1,
+                        }}
+                      >
+                        <Popup>
+                          <div style={{ minWidth: "180px", fontFamily: "system-ui, sans-serif" }}>
+                            <div style={{ fontWeight: 700, fontSize: "13px", marginBottom: "4px" }}>
+                              {extractArea(req.location)}
+                            </div>
+                            <div style={{ fontSize: "12px", color: "#475569", marginBottom: "6px" }}>
+                              {req.userName || "Unknown user"}
+                            </div>
+                            <div
+                              style={{
+                                display: "inline-block",
+                                padding: "2px 8px",
+                                borderRadius: "999px",
+                                background:
+                                  req.status === "pending"
+                                    ? "#fef3c7"
+                                    : req.status === "assigned"
+                                    ? "#dbeafe"
+                                    : "#d1fae5",
+                                color:
+                                  req.status === "pending"
+                                    ? "#92400e"
+                                    : req.status === "assigned"
+                                    ? "#1e40af"
+                                    : "#065f46",
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                textTransform: "capitalize",
+                              }}
+                            >
+                              {req.status || "unknown"}
+                            </div>
+                          </div>
+                        </Popup>
+                      </CircleMarker>
+                    );
+                  })}
+              </MapContainer>
             </div>
           </Card>
 
-          {/* Pending Pickups by Area */}
+          {/* Pending Pickups by Area — real data */}
           <Card padding="none" className="overflow-hidden">
             <CardHeader className={cn("flex items-center gap-3", cardHeaderPad)}>
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600 ring-1 ring-amber-200 2xl:h-10 2xl:w-10">
@@ -468,7 +731,9 @@ export default function Dashboard() {
                 <h3 className="text-[15px] font-semibold tracking-tight text-slate-900 2xl:text-base">
                   Pending Pickups by Area
                 </h3>
-                <p className="text-xs text-slate-500">Requests grouped by service zone</p>
+                <p className="text-xs text-slate-500">
+                  {pendingAreas.length} area{pendingAreas.length === 1 ? "" : "s"} with requests
+                </p>
               </div>
             </CardHeader>
             <Table wrapperClassName="rounded-none border-0 border-t shadow-none">
@@ -481,9 +746,17 @@ export default function Dashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pendingAreas.map((item) => (
-                  <PendingAreaRow key={item.area} {...item} />
-                ))}
+                {pendingAreas.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className={cn(cellPad, "text-center text-sm text-slate-500")}>
+                      No pickup requests found in Firestore
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  pendingAreas.map((item) => (
+                    <PendingAreaRow key={item.area} {...item} />
+                  ))
+                )}
               </TableBody>
             </Table>
           </Card>
