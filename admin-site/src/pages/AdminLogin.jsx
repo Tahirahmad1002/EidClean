@@ -5,7 +5,17 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { ArrowRight, Check, Leaf, Lock, Mail, Moon, XCircle } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  Eye,
+  EyeOff,
+  Leaf,
+  Lock,
+  Mail,
+  Moon,
+  XCircle,
+} from "lucide-react";
 import { Button, Input } from "../components/ui";
 
 const features = [
@@ -21,10 +31,12 @@ export default function AdminLogin() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
+  const [showPassword, setShowPassword] = useState(false); // ← added
+
   const navigate = useNavigate();
   const { user, userRole, loading: authLoading } = useAuth();
 
-  // NEW: Watch for role change after login
+  // Watch for role change after login
   useEffect(() => {
     if (loginSuccess && !authLoading) {
       console.log("Checking role for navigation:", userRole);
@@ -33,7 +45,6 @@ export default function AdminLogin() {
       } else if (userRole === "ngo") {
         navigate("/ngo-dashboard", { replace: true });
       } else if (user) {
-        // If user exists but no role, wait a bit more
         console.log("No role yet, waiting...");
       } else {
         navigate("/", { replace: true });
@@ -49,7 +60,7 @@ export default function AdminLogin() {
     try {
       await signInWithEmailAndPassword(auth, email, password);
       console.log("Sign in successful");
-      setLoginSuccess(true); // Triggers the useEffect above
+      setLoginSuccess(true);
     } catch (err) {
       console.error("Login error:", err);
       setError("Invalid email or password. Please try again.");
@@ -70,7 +81,7 @@ export default function AdminLogin() {
       />
 
       <div className="relative grid w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-pop ring-1 ring-white/10 md:grid-cols-2">
-        {/* Left Side - Branding */}
+        {/* Left Side — Branding */}
         <div className="relative flex flex-col justify-between overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-600 to-teal-600 p-5 sm:p-6 lg:p-10 md:min-h-[520px]">
           <div
             className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.07)_1px,transparent_1px)] bg-[size:28px_28px]"
@@ -98,7 +109,9 @@ export default function AdminLogin() {
                   aria-hidden="true"
                 />
               </div>
-              <span className="text-base font-semibold tracking-tight text-white">EidClean</span>
+              <span className="text-base font-semibold tracking-tight text-white">
+                EidClean
+              </span>
             </div>
             <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
               Municipal Portal
@@ -107,13 +120,17 @@ export default function AdminLogin() {
               Abbottabad Waste Management
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-emerald-50/75">
-              Khyber Pakhtunkhwa's smart Qurbani waste management system — keeping Abbottabad clean during Eid ul Adha.
+              Khyber Pakhtunkhwa's smart Qurbani waste management system — keeping
+              Abbottabad clean during Eid ul Adha.
             </p>
           </div>
 
           <div className="relative mt-6 hidden space-y-2.5 md:block">
             {features.map((feature) => (
-              <div key={feature} className="flex items-center gap-3 text-sm text-emerald-50/90">
+              <div
+                key={feature}
+                className="flex items-center gap-3 text-sm text-emerald-50/90"
+              >
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/25">
                   <Check className="h-3 w-3 text-emerald-100" aria-hidden="true" />
                 </span>
@@ -131,11 +148,15 @@ export default function AdminLogin() {
           </div>
         </div>
 
-        {/* Right Side - Login Form */}
+        {/* Right Side — Login Form */}
         <div className="flex flex-col justify-center p-5 sm:p-8 lg:p-12">
           <div className="mb-6 sm:mb-8">
-            <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Welcome back</h2>
-            <p className="mt-1 text-sm text-slate-500">Sign in to your admin account</p>
+            <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
+              Welcome back
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Sign in to your admin account
+            </p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
@@ -149,15 +170,29 @@ export default function AdminLogin() {
               required
             />
 
-            <Input
-              label="Password"
-              type="password"
-              leftIcon={Lock}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-            />
+            <div className="relative">
+              <Input
+                label="Password"
+                type={showPassword ? "text" : "password"}
+                leftIcon={Lock}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-[38px] rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
 
             <div className="flex items-center justify-between">
               <a
@@ -170,7 +205,10 @@ export default function AdminLogin() {
 
             {error && (
               <div className="flex items-start gap-2.5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
-                <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" aria-hidden="true" />
+                <XCircle
+                  className="mt-0.5 h-4 w-4 shrink-0 text-red-500"
+                  aria-hidden="true"
+                />
                 <span>{error}</span>
               </div>
             )}

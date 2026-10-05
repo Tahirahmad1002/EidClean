@@ -1,7 +1,7 @@
 // src/pages/RoleSelection.jsx
 
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Building2, HeartHandshake, Moon } from "lucide-react";
+import { ArrowRight, Building2, Check, HeartHandshake, Moon } from "lucide-react";
 
 export default function RoleSelection() {
   const navigate = useNavigate();
@@ -13,6 +13,18 @@ export default function RoleSelection() {
   const handleNgoClick = () => {
     navigate("/ngo-splash");
   };
+
+  const municipalFeatures = [
+    "Real-time pickup tracking",
+    "AI-powered resource planning",
+    "Driver performance analytics",
+  ];
+
+  const ngoFeatures = [
+    "Meat donation tracking",
+    "Coordinated pickups",
+    "Family distribution records",
+  ];
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-950 to-slate-950 p-4 sm:p-5 lg:p-6">
@@ -81,19 +93,19 @@ export default function RoleSelection() {
                   aria-hidden="true"
                 />
               </div>
-              <div className="flex gap-7 border-t border-white/10 pt-4">
-                <div>
-                  <div className="text-lg font-semibold tabular-nums tracking-tight text-emerald-300">145</div>
-                  <div className="text-xs text-emerald-100/50">Pickups</div>
-                </div>
-                <div>
-                  <div className="text-lg font-semibold tabular-nums tracking-tight text-emerald-300">23</div>
-                  <div className="text-xs text-emerald-100/50">Drivers</div>
-                </div>
-                <div>
-                  <div className="text-lg font-semibold tabular-nums tracking-tight text-emerald-300">89%</div>
-                  <div className="text-xs text-emerald-100/50">On-Time</div>
-                </div>
+              <div className="flex flex-col gap-2 border-t border-white/10 pt-4">
+                {municipalFeatures.map((feature) => (
+                  <div
+                    key={feature}
+                    className="flex items-center gap-2 text-xs text-emerald-50/70"
+                  >
+                    <Check
+                      className="h-3.5 w-3.5 shrink-0 text-emerald-300"
+                      aria-hidden="true"
+                    />
+                    {feature}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -107,6 +119,9 @@ export default function RoleSelection() {
               className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-amber-400/10 blur-3xl transition-opacity duration-200 group-hover:bg-amber-400/20"
               aria-hidden="true"
             />
+            <span className="absolute right-4 top-4 rounded-full bg-amber-400/15 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-300 ring-1 ring-amber-300/30">
+              In Development
+            </span>
             <div className="relative">
               <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-amber-400/15 text-amber-300 ring-1 ring-amber-300/20">
                 <HeartHandshake className="h-5 w-5" aria-hidden="true" />
@@ -124,19 +139,19 @@ export default function RoleSelection() {
                   aria-hidden="true"
                 />
               </div>
-              <div className="flex gap-7 border-t border-white/10 pt-4">
-                <div>
-                  <div className="text-lg font-semibold tabular-nums tracking-tight text-amber-300">2.5K</div>
-                  <div className="text-xs text-emerald-100/50">Meat kg</div>
-                </div>
-                <div>
-                  <div className="text-lg font-semibold tabular-nums tracking-tight text-amber-300">180</div>
-                  <div className="text-xs text-emerald-100/50">Donations</div>
-                </div>
-                <div>
-                  <div className="text-lg font-semibold tabular-nums tracking-tight text-amber-300">450</div>
-                  <div className="text-xs text-emerald-100/50">Families</div>
-                </div>
+              <div className="flex flex-col gap-2 border-t border-white/10 pt-4">
+                {ngoFeatures.map((feature) => (
+                  <div
+                    key={feature}
+                    className="flex items-center gap-2 text-xs text-emerald-50/70"
+                  >
+                    <Check
+                      className="h-3.5 w-3.5 shrink-0 text-amber-300"
+                      aria-hidden="true"
+                    />
+                    {feature}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
